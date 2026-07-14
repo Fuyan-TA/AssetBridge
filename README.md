@@ -13,6 +13,8 @@ OBJ-to-GLB route that has automated and local acceptance evidence.
 
 ![AssetBridge v0.1.0 desktop conversion](docs/images/assetbridge-v0.1.0.png)
 
+Local file-system paths are redacted in documentation screenshots.
+
 ## v0.1.0 scope
 
 The verified product scope is:
