@@ -1,0 +1,15 @@
+# Local tools
+.tools/
+
+# Build outputs and dependency trees
+out/
+build/
+vcpkg_installed/
+
+# IDE and user-local configuration
+.vs/
+CMakeUserPresets.json
+*.user
+
+# Logs
+*.log
