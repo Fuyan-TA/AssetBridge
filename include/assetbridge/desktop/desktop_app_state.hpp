@@ -7,6 +7,7 @@
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace assetbridge::desktop {
@@ -15,10 +16,19 @@ enum class AppStatus {
     no_file,
     inspecting,
     ready,
+    not_supported,
     converting,
     validating,
     success,
     failed
+};
+
+struct PreflightDiagnostic {
+    std::string code;
+    std::string feature_code;
+    std::string message;
+    LossSeverity severity = LossSeverity::warning;
+    bool future_support_candidate = false;
 };
 
 enum class FileSelectionResult {
@@ -34,7 +44,12 @@ class DesktopAppState {
 public:
     [[nodiscard]] AppStatus status() const noexcept { return status_; }
     [[nodiscard]] bool is_busy() const noexcept;
+    [[nodiscard]] bool is_runtime_failure() const noexcept {
+        return status_ == AppStatus::failed;
+    }
     [[nodiscard]] bool can_convert() const noexcept;
+    [[nodiscard]] bool has_non_triangle_faces() const noexcept;
+    [[nodiscard]] std::string_view geometry_notice() const noexcept;
 
     [[nodiscard]] const std::optional<std::filesystem::path>& input_path() const noexcept {
         return input_path_;
@@ -52,6 +67,9 @@ public:
         return conversion_;
     }
     [[nodiscard]] const std::string& message() const noexcept { return message_; }
+    [[nodiscard]] const std::vector<PreflightDiagnostic>& diagnostics() const noexcept {
+        return diagnostics_;
+    }
 
     FileSelectionResult select_files(const std::vector<std::filesystem::path>& files);
     void complete_inspection(InspectionResult inspection, PreflightReport preflight);
@@ -69,6 +87,7 @@ private:
     std::optional<AssetSummary> summary_;
     std::optional<PreflightReport> preflight_;
     std::optional<ConversionReport> conversion_;
+    std::vector<PreflightDiagnostic> diagnostics_;
     std::string message_ = "Ready";
 };
 

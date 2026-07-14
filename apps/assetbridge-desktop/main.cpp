@@ -249,6 +249,7 @@ ImVec4 status_color(AppStatus status) {
     switch (status) {
     case AppStatus::success: return { 0.25F, 0.82F, 0.52F, 1.0F };
     case AppStatus::failed: return { 0.96F, 0.38F, 0.38F, 1.0F };
+    case AppStatus::not_supported:
     case AppStatus::inspecting:
     case AppStatus::converting:
     case AppStatus::validating: return { 0.98F, 0.70F, 0.25F, 1.0F };
@@ -338,16 +339,48 @@ void draw_ui(
         if (ImGui::SmallButton("Copy Path")) ImGui::SetClipboardText(full.c_str());
         if (state.summary()) {
             const auto& value = *state.summary();
-            ImGui::Text("Meshes: %llu    Triangles: %llu    UV: %u    Normals: %s    Materials: %llu",
+            ImGui::Text("Meshes: %llu    Faces: %llu    Source Triangles: %llu",
                 static_cast<unsigned long long>(value.mesh_count),
-                static_cast<unsigned long long>(value.triangle_count),
+                static_cast<unsigned long long>(value.face_count),
+                static_cast<unsigned long long>(value.triangle_count));
+            ImGui::Text("UV Channels: %u    Normals: %s    Materials: %llu",
                 value.uv_channel_count,
                 value.has_normals ? "yes" : "no",
                 static_cast<unsigned long long>(value.material_count));
+            if (state.has_non_triangle_faces()) {
+                ImGui::PushStyleColor(ImGuiCol_Text, { 0.98F, 0.70F, 0.25F, 1.0F });
+                ImGui::TextWrapped("%s", std::string(state.geometry_notice()).c_str());
+                ImGui::PopStyleColor();
+            }
         }
         if (state.preflight()) {
             ImGui::Text("Preflight: %s",
                 std::string(assetbridge::to_string(state.preflight()->decision.overall_result)).c_str());
+            if (state.status() == AppStatus::not_supported) {
+                ImGui::SameLine();
+                ImGui::TextColored(
+                    status_color(state.status()),
+                    "%s",
+                    std::string(assetbridge::desktop::to_string(state.status())).c_str());
+            }
+        }
+        if (!state.diagnostics().empty()) {
+            ImGui::SeparatorText("Preflight Diagnostics");
+            for (const auto& diagnostic : state.diagnostics()) {
+                ImGui::TextColored(
+                    { 0.98F, 0.70F, 0.25F, 1.0F },
+                    "[%s / %s]",
+                    diagnostic.code.c_str(),
+                    diagnostic.feature_code.c_str());
+                ImGui::TextWrapped("%s", diagnostic.message.c_str());
+                ImGui::PushStyleColor(ImGuiCol_Text, ImGui::GetStyleColorVec4(ImGuiCol_TextDisabled));
+                ImGui::TextWrapped(
+                    "Future support scope: %s",
+                    diagnostic.future_support_candidate
+                        ? "candidate; not enabled in the current route"
+                        : "outside the current product plan");
+                ImGui::PopStyleColor();
+            }
         }
     } else {
         ImGui::TextDisabled("No asset selected.");
@@ -565,7 +598,9 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
                 *state.input_path(), state.output_root());
         }
         if (acceptance_test
-            && (state.status() == AppStatus::success || state.status() == AppStatus::failed)) {
+            && (state.status() == AppStatus::success
+                || state.status() == AppStatus::failed
+                || state.status() == AppStatus::not_supported)) {
             acceptance_exit_code = state.status() == AppStatus::success ? 0 : 20;
             if (!acceptance_hold) running = false;
         }

@@ -50,6 +50,31 @@ assetbridge::PreflightReport safe_preflight(const std::filesystem::path& path) {
     };
 }
 
+assetbridge::PreflightReport blocked_preflight(
+    const std::filesystem::path& path,
+    std::vector<assetbridge::LossItem> losses) {
+    assetbridge::AssetFeatures features;
+    features.mesh_count = 29;
+    assetbridge::PreflightDecision decision{
+        assetbridge::FormatId::glb2,
+        true,
+        true,
+        true,
+        assetbridge::CompatibilityResult::blocked,
+        assetbridge::OverallResult::blocked,
+        {},
+        std::move(losses)
+    };
+    return {
+        path,
+        { assetbridge::FormatId::obj, true, true },
+        assetbridge::InspectionErrorCode::none,
+        {},
+        features,
+        std::move(decision)
+    };
+}
+
 assetbridge::ConversionReport successful_conversion(const std::filesystem::path& root) {
     assetbridge::ConversionReport report;
     report.source_path = std::filesystem::path(L"测试") / L"三角形.obj";
@@ -99,10 +124,65 @@ int main() {
     failures += require(!no_output.can_convert(), "conversion should require an output directory");
     failures += require(!no_output.begin_conversion(), "conversion must not start without output directory");
 
+    DesktopAppState blocked;
+    blocked.select_files({ unicode_path });
+    auto blocked_inspection = successful_inspection(unicode_path);
+    blocked_inspection.summary->mesh_count = 29;
+    blocked_inspection.summary->face_count = 87428;
+    blocked_inspection.summary->triangle_count = 0;
+    blocked.complete_inspection(
+        std::move(blocked_inspection),
+        blocked_preflight(unicode_path, {
+            {
+                "route_feature_unverified",
+                assetbridge::AssetFeature::multiple_meshes,
+                assetbridge::LossSeverity::blocking,
+                false,
+                "Feature has not been verified for this AssetBridge conversion route."
+            },
+            {
+                "route_feature_unverified",
+                assetbridge::AssetFeature::external_textures,
+                assetbridge::LossSeverity::blocking,
+                false,
+                "Feature has not been verified for this AssetBridge conversion route."
+            }
+        }));
+    blocked.set_output_root(L"输出");
+    failures += require(
+        blocked.status() == AppStatus::not_supported,
+        "blocked preflight should enter the distinct not-supported state");
+    failures += require(
+        !blocked.is_runtime_failure(),
+        "blocked preflight is a product-boundary result, not a runtime failure");
+    failures += require(!blocked.can_convert(), "blocked preflight must disable conversion");
+    failures += require(!blocked.begin_conversion(), "blocked preflight must not start conversion");
+    failures += require(
+        blocked.diagnostics().size() == 2,
+        "all detected blocking reasons should be available to the UI");
+    failures += require(
+        blocked.diagnostics()[0].code == "route_feature_unverified"
+            && blocked.diagnostics()[0].feature_code == "multiple_meshes"
+            && blocked.diagnostics()[0].message == "Multiple meshes: 29 — not verified yet"
+            && blocked.diagnostics()[0].future_support_candidate,
+        "multiple-mesh diagnostic should preserve stable codes, count, and future scope");
+    failures += require(
+        blocked.diagnostics()[1].feature_code == "external_textures"
+            && blocked.diagnostics()[1].message == "External textures — not verified yet",
+        "multiple concrete diagnostics should retain distinct user messages");
+    failures += require(
+        blocked.has_non_triangle_faces(),
+        "faces greater than source triangles should identify non-triangle source geometry");
+    failures += require(
+        blocked.geometry_notice()
+            == "Source contains non-triangle faces; conversion will triangulate when the route supports this asset.",
+        "non-triangle geometry notice should remain explicit and stable");
+
     DesktopAppState success;
     success.select_files({ unicode_path });
     success.complete_inspection(successful_inspection(unicode_path), safe_preflight(unicode_path));
     success.set_output_root(L"输出");
+    failures += require(success.can_convert(), "safe preflight should remain convertible");
     failures += require(success.begin_conversion(), "ready state with output should enter converting");
     failures += require(success.status() == AppStatus::converting, "state should be converting");
     failures += require(
