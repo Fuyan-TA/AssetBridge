@@ -11,6 +11,8 @@ AssetBridge v0.1.0 不是通用全格式转换器，也不对已验证边界之�
 
 ![AssetBridge v0.1.0 桌面转换界面](docs/images/assetbridge-v0.1.0.png)
 
+文档截图中的本地文件系统路径已作隐藏处理。
+
 ## v0.1.0 支持范围
 
 当前正式验证的产品范围：
