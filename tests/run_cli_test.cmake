@@ -13,6 +13,9 @@ endif()
 if(DEFINED ASSETBRIDGE_INPUT)
     list(APPEND assetbridge_arguments "${ASSETBRIDGE_INPUT}")
 endif()
+if(DEFINED ASSETBRIDGE_TARGET)
+    list(APPEND assetbridge_arguments "--target" "${ASSETBRIDGE_TARGET}")
+endif()
 if(DEFINED ASSETBRIDGE_OPTION)
     list(APPEND assetbridge_arguments "${ASSETBRIDGE_OPTION}")
 endif()
@@ -89,6 +92,35 @@ if(DEFINED ASSETBRIDGE_VALIDATE_JSON)
     )
     if(DEFINED ASSETBRIDGE_INPUT)
         list(APPEND validator_arguments "${ASSETBRIDGE_INPUT}")
+    endif()
+
+    if(ASSETBRIDGE_COMPARE_TEXT)
+        set(text_arguments)
+        if(DEFINED ASSETBRIDGE_COMMAND)
+            list(APPEND text_arguments "${ASSETBRIDGE_COMMAND}")
+        endif()
+        if(DEFINED ASSETBRIDGE_INPUT)
+            list(APPEND text_arguments "${ASSETBRIDGE_INPUT}")
+        endif()
+        if(DEFINED ASSETBRIDGE_TARGET)
+            list(APPEND text_arguments "--target" "${ASSETBRIDGE_TARGET}")
+        endif()
+
+        execute_process(
+            COMMAND "${ASSETBRIDGE_CLI}" ${text_arguments}
+            RESULT_VARIABLE text_exit
+            OUTPUT_VARIABLE text_stdout
+            ERROR_VARIABLE text_stderr
+            ENCODING UTF-8
+        )
+        if(NOT "${text_exit}" STREQUAL "${ASSETBRIDGE_EXPECTED_EXIT}")
+            message(FATAL_ERROR
+                "Text comparison command exited ${text_exit}, expected ${ASSETBRIDGE_EXPECTED_EXIT}")
+        endif()
+        set(text_output "${text_stdout}${text_stderr}")
+        set(text_output_path "${ASSETBRIDGE_JSON_OUTPUT}.txt")
+        file(WRITE "${text_output_path}" "${text_output}")
+        list(APPEND validator_arguments "${text_output_path}")
     endif()
 
     execute_process(

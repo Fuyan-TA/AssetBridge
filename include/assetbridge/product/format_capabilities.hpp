@@ -1,0 +1,105 @@
+#pragma once
+
+#include <array>
+#include <cstdint>
+#include <optional>
+#include <string>
+#include <string_view>
+#include <vector>
+
+namespace assetbridge {
+
+enum class FormatId {
+    obj,
+    gltf2,
+    glb2,
+    stl,
+    ply
+};
+
+enum class AssetFeature {
+    mesh,
+    multiple_meshes,
+    node_hierarchy,
+    normals,
+    tangents,
+    uv0,
+    multiple_uv_channels,
+    vertex_colors,
+    material_slots,
+    pbr_materials,
+    external_textures,
+    embedded_textures,
+    bones,
+    skin_weights,
+    animations,
+    morph_targets
+};
+
+enum class SupportLevel {
+    supported,
+    partial,
+    unsupported,
+    unverified
+};
+
+enum class LossSeverity {
+    info,
+    warning,
+    blocking
+};
+
+struct AnimationFeature {
+    std::string name;
+    double duration_seconds = 0.0;
+    double duration_ticks = 0.0;
+    double ticks_per_second = 0.0;
+};
+
+struct AssetFeatures {
+    std::uint64_t mesh_count = 0;
+    bool has_node_hierarchy = false;
+    std::uint64_t meshes_with_normals = 0;
+    std::uint64_t meshes_with_tangents = 0;
+    std::uint32_t max_uv_channel_count = 0;
+    std::uint64_t meshes_with_vertex_colors = 0;
+    std::uint64_t referenced_material_count = 0;
+    bool has_pbr_materials = false;
+    std::vector<std::string> external_texture_references;
+    std::uint64_t embedded_texture_count = 0;
+    std::uint64_t bone_count = 0;
+    std::uint64_t skinned_mesh_count = 0;
+    std::uint32_t max_weights_per_vertex = 0;
+    std::vector<AnimationFeature> animations;
+    std::vector<std::string> morph_target_names;
+};
+
+struct FeatureCapability {
+    AssetFeature feature;
+    SupportLevel support;
+    LossSeverity loss_severity;
+    bool overrideable;
+    std::string_view reason;
+};
+
+struct FormatCapability {
+    FormatId id;
+    bool product_enabled;
+    bool verified;
+    std::vector<FeatureCapability> features;
+};
+
+[[nodiscard]] std::optional<FormatId> parse_format_id(std::string_view input);
+[[nodiscard]] std::string_view to_string(FormatId id) noexcept;
+[[nodiscard]] std::string_view to_string(AssetFeature feature) noexcept;
+[[nodiscard]] std::string_view to_string(SupportLevel level) noexcept;
+[[nodiscard]] std::string_view to_string(LossSeverity severity) noexcept;
+
+[[nodiscard]] const std::array<FormatCapability, 5>& capability_matrix();
+[[nodiscard]] const FormatCapability& capability_for(FormatId id);
+[[nodiscard]] const FeatureCapability& capability_for(
+    FormatId format,
+    AssetFeature feature);
+[[nodiscard]] std::vector<AssetFeature> present_features(const AssetFeatures& features);
+
+} // namespace assetbridge

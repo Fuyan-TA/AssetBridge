@@ -1,5 +1,7 @@
 #pragma once
 
+#include "assetbridge/product/format_capabilities.hpp"
+
 #include <cstdint>
 #include <filesystem>
 #include <optional>
@@ -32,6 +34,7 @@ struct InspectionResult {
     InspectionErrorCode error_code = InspectionErrorCode::none;
     std::string error_message;
     std::optional<AssetSummary> summary;
+    std::optional<AssetFeatures> features;
 
     [[nodiscard]] explicit operator bool() const noexcept {
         return error_code == InspectionErrorCode::none && summary.has_value();

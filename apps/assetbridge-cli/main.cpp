@@ -1,11 +1,16 @@
 #include "assetbridge/core/asset_inspector.hpp"
+#include "assetbridge/core/preflight_report.hpp"
+#include "assetbridge/core/preflight_serializer.hpp"
 #include "assetbridge/core/report_serializer.hpp"
 #include "assetbridge/core/runtime_capabilities.hpp"
 
 #include <filesystem>
 #include <iostream>
+#include <stdexcept>
 #include <string>
 #include <string_view>
+
+#include <Windows.h>
 
 namespace {
 
@@ -14,11 +19,46 @@ std::string to_utf8(const std::filesystem::path& path) {
     return { reinterpret_cast<const char*>(utf8.data()), utf8.size() };
 }
 
+std::string utf16_to_utf8(std::wstring_view value) {
+    if (value.empty()) {
+        return {};
+    }
+
+    const int required_size = WideCharToMultiByte(
+        CP_UTF8,
+        WC_ERR_INVALID_CHARS,
+        value.data(),
+        static_cast<int>(value.size()),
+        nullptr,
+        0,
+        nullptr,
+        nullptr);
+    if (required_size <= 0) {
+        throw std::runtime_error("Could not convert a UTF-16 argument to UTF-8.");
+    }
+
+    std::string result(static_cast<std::size_t>(required_size), '\0');
+    const int converted_size = WideCharToMultiByte(
+        CP_UTF8,
+        WC_ERR_INVALID_CHARS,
+        value.data(),
+        static_cast<int>(value.size()),
+        result.data(),
+        required_size,
+        nullptr,
+        nullptr);
+    if (converted_size != required_size) {
+        throw std::runtime_error("Could not convert a UTF-16 argument to UTF-8.");
+    }
+    return result;
+}
+
 void print_usage() {
     std::cerr
         << "Usage:\n"
         << "  assetbridge-cli inspect <file> [--json]\n"
-        << "  assetbridge-cli capabilities [--json]\n";
+        << "  assetbridge-cli capabilities [--json]\n"
+        << "  assetbridge-cli preflight <file> --target <format> [--json]\n";
 }
 
 } // namespace
@@ -71,6 +111,47 @@ int wmain(int argc, wchar_t* argv[]) {
             std::cout << '\n';
         }
         return 0;
+    }
+
+    if (argc >= 2 && std::wstring_view(argv[1]) == L"preflight") {
+        const bool json_output = argc == 6 && std::wstring_view(argv[5]) == L"--json";
+        if ((argc != 5 && !json_output) || std::wstring_view(argv[3]) != L"--target") {
+            print_usage();
+            return 2;
+        }
+
+        std::string requested_target;
+        try {
+            requested_target = utf16_to_utf8(argv[4]);
+        } catch (const std::exception& exception) {
+            if (json_output) {
+                std::cout << assetbridge::unknown_target_to_json("invalid UTF-16 argument") << '\n';
+            } else {
+                std::cerr << "Error: " << exception.what() << '\n';
+            }
+            return 2;
+        }
+
+        const auto target = assetbridge::parse_format_id(requested_target);
+        if (!target.has_value()) {
+            if (json_output) {
+                std::cout << assetbridge::unknown_target_to_json(requested_target) << '\n';
+            } else {
+                std::cerr << assetbridge::unknown_target_to_text(requested_target);
+            }
+            return 2;
+        }
+
+        const std::filesystem::path file(argv[2]);
+        const auto report = assetbridge::create_preflight_report(file, *target);
+        if (json_output) {
+            std::cout << assetbridge::preflight_to_json(report) << '\n';
+        } else if (report) {
+            std::cout << assetbridge::preflight_to_text(report);
+        } else {
+            std::cerr << assetbridge::preflight_to_text(report);
+        }
+        return report ? 0 : 1;
     }
 
     print_usage();

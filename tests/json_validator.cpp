@@ -1,10 +1,13 @@
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <initializer_list>
 #include <iostream>
+#include <iterator>
 #include <stdexcept>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include <nlohmann/json.hpp>
 
@@ -168,11 +171,223 @@ void validate_capabilities(const Json& report) {
     }
 }
 
+std::string read_text_file(const std::filesystem::path& path) {
+    std::ifstream input(path, std::ios::binary);
+    require(static_cast<bool>(input), "Could not open captured text output");
+    return {
+        std::istreambuf_iterator<char>(input),
+        std::istreambuf_iterator<char>()
+    };
+}
+
+void validate_preflight_features(const Json& features) {
+    require_exact_keys(features, {
+        "mesh_count",
+        "has_node_hierarchy",
+        "meshes_with_normals",
+        "meshes_with_tangents",
+        "max_uv_channel_count",
+        "meshes_with_vertex_colors",
+        "referenced_material_count",
+        "has_pbr_materials",
+        "external_texture_references",
+        "embedded_texture_count",
+        "bone_count",
+        "skinned_mesh_count",
+        "max_weights_per_vertex",
+        "animation_count",
+        "animations",
+        "morph_target_count",
+        "morph_target_names"
+    });
+    for (const auto field : {
+             "mesh_count",
+             "meshes_with_normals",
+             "meshes_with_tangents",
+             "max_uv_channel_count",
+             "meshes_with_vertex_colors",
+             "referenced_material_count",
+             "embedded_texture_count",
+             "bone_count",
+             "skinned_mesh_count",
+             "max_weights_per_vertex",
+             "animation_count",
+             "morph_target_count" }) {
+        require(features.at(field).is_number_unsigned(), "feature count must be unsigned");
+    }
+    require(features.at("has_node_hierarchy").is_boolean(), "hierarchy flag must be boolean");
+    require(features.at("has_pbr_materials").is_boolean(), "PBR flag must be boolean");
+    require(features.at("external_texture_references").is_array(), "texture references must be an array");
+    require(features.at("animations").is_array(), "animations must be an array");
+    require(features.at("morph_target_names").is_array(), "morph names must be an array");
+    require(features.at("mesh_count") == 1, "preflight mesh_count mismatch");
+    require(features.at("meshes_with_normals") == 1, "preflight normal count mismatch");
+    require(features.at("max_uv_channel_count") == 1, "preflight UV count mismatch");
+    require(features.at("referenced_material_count") == 1, "referenced material count mismatch");
+    require(features.at("animation_count") == 0, "OBJ must not invent animations");
+    require(features.at("bone_count") == 0, "OBJ must not invent bones");
+    require(features.at("morph_target_count") == 0, "OBJ must not invent morph targets");
+}
+
+void validate_assessments(const Json& assessments) {
+    require(assessments.is_array() && !assessments.empty(), "assessments must be non-empty");
+    for (const auto& assessment : assessments) {
+        require_exact_keys(assessment, { "feature", "support", "reason" });
+        require(assessment.at("feature").is_string(), "assessment feature must be a string");
+        require(assessment.at("support").is_string(), "assessment support must be a string");
+        require(assessment.at("reason").is_string(), "assessment reason must be a string");
+        const auto feature = assessment.at("feature").get<std::string>();
+        require(feature != "animations", "absent animation must not be assessed");
+        require(feature != "bones", "absent bones must not be assessed");
+        require(feature != "morph_targets", "absent morph targets must not be assessed");
+    }
+}
+
+std::vector<std::string> validate_losses(const Json& losses) {
+    require(losses.is_array(), "losses must be an array");
+    std::vector<std::string> codes;
+    for (const auto& loss : losses) {
+        require_exact_keys(loss, { "code", "feature", "severity", "overrideable", "reason" });
+        require(loss.at("code").is_string(), "loss code must be a string");
+        require(
+            loss.at("feature").is_string() || loss.at("feature").is_null(),
+            "loss feature must be string or null");
+        require(loss.at("severity").is_string(), "loss severity must be a string");
+        require(loss.at("overrideable").is_boolean(), "loss overrideable must be boolean");
+        require(loss.at("reason").is_string(), "loss reason must be a string");
+        codes.push_back(loss.at("code").get<std::string>());
+    }
+    return codes;
+}
+
+void validate_preflight_success(
+    const Json& report,
+    const std::filesystem::path& input,
+    std::string_view expected_target,
+    std::string_view expected_compatibility,
+    std::string_view expected_overall,
+    const std::filesystem::path& text_path) {
+    require_exact_keys(report, {
+        "schema",
+        "status",
+        "source",
+        "target",
+        "features",
+        "assessments",
+        "losses",
+        "compatibility_result",
+        "product_enabled",
+        "verified",
+        "overall_result",
+        "error"
+    });
+    require(report.at("schema") == "assetbridge.preflight.v1", "preflight schema mismatch");
+    require(report.at("status") == "success", "preflight status mismatch");
+    require(report.at("error").is_null(), "successful preflight error must be null");
+    require(report.at("product_enabled").is_boolean(), "product_enabled must be boolean");
+    require(report.at("verified").is_boolean(), "verified must be boolean");
+    require(report.at("product_enabled") == false, "Phase 1C output must remain disabled");
+    require(report.at("verified") == false, "Phase 1C output must remain unverified");
+    require(
+        report.at("compatibility_result").get<std::string>() == expected_compatibility,
+        "compatibility mismatch");
+    require(
+        report.at("overall_result").get<std::string>() == expected_overall,
+        "overall result mismatch");
+    require(report.at("overall_result") != "safe", "Phase 1C must not report overall safe");
+
+    const auto& source = report.at("source");
+    require_exact_keys(source, { "file", "format_id", "product_enabled", "verified", "valid" });
+    validate_file(source.at("file"), input);
+    require(source.at("format_id") == "obj", "source canonical format must be obj");
+    require(source.at("product_enabled") == true, "OBJ input must be enabled");
+    require(source.at("verified") == true, "OBJ input must be verified");
+    require(source.at("valid") == true, "source must be valid");
+
+    const auto& target = report.at("target");
+    require_exact_keys(target, {
+        "format_id",
+        "runtime_exporter_available",
+        "product_enabled",
+        "verified"
+    });
+    require(
+        target.at("format_id").get<std::string>() == expected_target,
+        "target canonical ID mismatch");
+    require(target.at("runtime_exporter_available") == true, "expected runtime exporter is absent");
+    require(target.at("product_enabled") == false, "target must remain disabled");
+    require(target.at("verified") == false, "target must remain unverified");
+
+    validate_preflight_features(report.at("features"));
+    validate_assessments(report.at("assessments"));
+    const auto loss_codes = validate_losses(report.at("losses"));
+
+    if (expected_target == "stl") {
+        require(!loss_codes.empty(), "OBJ to STL must report losses");
+        require(
+            std::find(loss_codes.begin(), loss_codes.end(), "uv0_unsupported") != loss_codes.end(),
+            "OBJ to STL must report UV loss");
+        require(
+            std::find(loss_codes.begin(), loss_codes.end(), "material_slots_unsupported") != loss_codes.end(),
+            "OBJ to STL must report material loss");
+    } else if (expected_target == "glb2") {
+        require(loss_codes.empty(), "OBJ to GLB must not invent a known loss");
+    }
+
+    const auto text = read_text_file(text_path);
+    require(
+        text.find("Target Format: " + std::string(expected_target)) != std::string::npos,
+        "text and JSON target disagree");
+    require(
+        text.find("Compatibility Result: " + std::string(expected_compatibility)) != std::string::npos,
+        "text and JSON compatibility disagree");
+    require(
+        text.find("Overall Result: " + std::string(expected_overall)) != std::string::npos,
+        "text and JSON overall result disagree");
+    for (const auto& code : loss_codes) {
+        require(text.find(code) != std::string::npos, "text output is missing a JSON loss code");
+    }
+}
+
+void validate_unknown_target(const Json& report) {
+    require_exact_keys(report, {
+        "schema",
+        "status",
+        "source",
+        "target",
+        "features",
+        "assessments",
+        "losses",
+        "compatibility_result",
+        "product_enabled",
+        "verified",
+        "overall_result",
+        "error"
+    });
+    require(report.at("schema") == "assetbridge.preflight.v1", "preflight schema mismatch");
+    require(report.at("status") == "error", "unknown target status must be error");
+    require(report.at("source").is_null(), "unknown target source must be null");
+    require(report.at("target").is_null(), "unknown target must not have a canonical ID");
+    require(report.at("features").is_null(), "unknown target features must be null");
+    require(report.at("assessments").is_array() && report.at("assessments").empty(), "unknown target assessments must be empty");
+    const auto codes = validate_losses(report.at("losses"));
+    require(codes.size() == 1 && codes.front() == "unknown_target_format", "unknown target loss mismatch");
+    const auto& loss = report.at("losses").front();
+    require(loss.at("severity") == "blocking", "unknown target must block");
+    require(loss.at("overrideable") == false, "unknown target must not be overrideable");
+    require(report.at("compatibility_result") == "blocked", "unknown target compatibility mismatch");
+    require(report.at("overall_result") == "blocked", "unknown target overall mismatch");
+    require(report.at("product_enabled") == false, "unknown target must be disabled");
+    require(report.at("verified") == false, "unknown target must be unverified");
+    require_exact_keys(report.at("error"), { "code", "message" });
+    require(report.at("error").at("code") == "unknown_target_format", "unknown target error mismatch");
+}
+
 } // namespace
 
 int wmain(int argc, wchar_t* argv[]) {
-    if (argc < 3 || argc > 4) {
-        std::cerr << "Usage: assetbridge-json-validator <mode> <json-file> [input-file]\n";
+    if (argc < 3 || argc > 5) {
+        std::cerr << "Usage: assetbridge-json-validator <mode> <json-file> [input-file] [text-file]\n";
         return 2;
     }
 
@@ -191,6 +406,27 @@ int wmain(int argc, wchar_t* argv[]) {
         } else if (mode == L"capabilities") {
             require(argc == 3, "capabilities does not accept an input file");
             validate_capabilities(report);
+        } else if (mode == L"preflight_stl") {
+            require(argc == 5, "preflight_stl requires input and text files");
+            validate_preflight_success(
+                report,
+                std::filesystem::path(argv[3]),
+                "stl",
+                "lossy",
+                "lossy",
+                std::filesystem::path(argv[4]));
+        } else if (mode == L"preflight_glb") {
+            require(argc == 5, "preflight_glb requires input and text files");
+            validate_preflight_success(
+                report,
+                std::filesystem::path(argv[3]),
+                "glb2",
+                "safe",
+                "unverified",
+                std::filesystem::path(argv[4]));
+        } else if (mode == L"preflight_unknown") {
+            require(argc == 4, "preflight_unknown requires the requested input file");
+            validate_unknown_target(report);
         } else {
             throw std::runtime_error("Unknown JSON validation mode");
         }
