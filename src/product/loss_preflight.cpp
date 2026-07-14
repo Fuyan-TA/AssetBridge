@@ -118,4 +118,56 @@ PreflightDecision evaluate_preflight(
     return decision;
 }
 
+PreflightDecision evaluate_route_preflight(
+    FormatId source,
+    FormatId target,
+    const AssetFeatures& source_features,
+    bool runtime_exporter_available,
+    bool asset_valid) {
+    auto decision = evaluate_preflight(
+        target,
+        source_features,
+        runtime_exporter_available,
+        asset_valid);
+    const auto& route = conversion_route(source, target);
+    decision.product_enabled = route.product_enabled;
+    decision.verified = route.verified;
+
+    if (route.product_enabled && route.verified && asset_valid) {
+        for (auto& assessment : decision.assessments) {
+            if (route_feature_verified(route, assessment.feature)) {
+                assessment.support = SupportLevel::supported;
+                assessment.reason = "Feature is verified for this AssetBridge conversion route.";
+            } else {
+                assessment.support = SupportLevel::unverified;
+                assessment.reason = "Feature has not been verified for this AssetBridge conversion route.";
+                decision.losses.push_back({
+                    "route_feature_unverified",
+                    assessment.feature,
+                    LossSeverity::blocking,
+                    false,
+                    assessment.reason
+                });
+            }
+        }
+
+        if (source_features.referenced_material_count > 1) {
+            decision.losses.push_back({
+                "route_feature_unverified",
+                AssetFeature::material_slots,
+                LossSeverity::blocking,
+                false,
+                "The verified OBJ to GLB2 route supports at most one referenced material."
+            });
+        }
+    }
+
+    decision.compatibility_result = compatibility_from(decision.losses);
+    decision.overall_result = overall_from(
+        decision.compatibility_result,
+        decision.product_enabled,
+        decision.verified);
+    return decision;
+}
+
 } // namespace assetbridge

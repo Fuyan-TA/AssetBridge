@@ -1,4 +1,6 @@
 #include "assetbridge/core/asset_inspector.hpp"
+#include "assetbridge/core/asset_converter.hpp"
+#include "assetbridge/core/conversion_serializer.hpp"
 #include "assetbridge/core/preflight_report.hpp"
 #include "assetbridge/core/preflight_serializer.hpp"
 #include "assetbridge/core/report_serializer.hpp"
@@ -58,7 +60,8 @@ void print_usage() {
         << "Usage:\n"
         << "  assetbridge-cli inspect <file> [--json]\n"
         << "  assetbridge-cli capabilities [--json]\n"
-        << "  assetbridge-cli preflight <file> --target <format> [--json]\n";
+        << "  assetbridge-cli preflight <file> --target <format> [--json]\n"
+        << "  assetbridge-cli convert <input.obj> --to glb --output <directory> [--json]\n";
 }
 
 } // namespace
@@ -150,6 +153,64 @@ int wmain(int argc, wchar_t* argv[]) {
             std::cout << assetbridge::preflight_to_text(report);
         } else {
             std::cerr << assetbridge::preflight_to_text(report);
+        }
+        return report ? 0 : 1;
+    }
+
+    if (argc >= 2 && std::wstring_view(argv[1]) == L"convert") {
+        const bool json_output = argc == 8 && std::wstring_view(argv[7]) == L"--json";
+        if ((argc != 7 && !json_output)
+            || std::wstring_view(argv[3]) != L"--to"
+            || std::wstring_view(argv[5]) != L"--output") {
+            if (argc >= 3 && std::wstring_view(argv[argc - 1]) == L"--json") {
+                std::cout << assetbridge::conversion_argument_error_to_json(
+                    "invalid_arguments",
+                    "Expected: convert <input.obj> --to glb --output <directory> [--json]")
+                          << '\n';
+            } else {
+                print_usage();
+            }
+            return 2;
+        }
+
+        std::string requested_target;
+        try {
+            requested_target = utf16_to_utf8(argv[4]);
+        } catch (const std::exception& exception) {
+            if (json_output) {
+                std::cout << assetbridge::conversion_argument_error_to_json(
+                    "invalid_target_format",
+                    exception.what()) << '\n';
+            } else {
+                std::cerr << "Error: " << exception.what() << '\n';
+            }
+            return 2;
+        }
+
+        const auto target = assetbridge::parse_format_id(requested_target);
+        if (!target.has_value()) {
+            const std::string message = "Unknown target format: " + requested_target;
+            if (json_output) {
+                std::cout << assetbridge::conversion_argument_error_to_json(
+                    "unknown_target_format",
+                    message) << '\n';
+            } else {
+                std::cerr << "Error [unknown_target_format]: " << message << '\n';
+            }
+            return 2;
+        }
+
+        const assetbridge::AssetConverter converter;
+        const auto report = converter.convert(
+            std::filesystem::path(argv[2]),
+            *target,
+            std::filesystem::path(argv[6]));
+        if (json_output) {
+            std::cout << assetbridge::conversion_report_to_json(report) << '\n';
+        } else if (report) {
+            std::cout << assetbridge::conversion_report_to_text(report);
+        } else {
+            std::cerr << assetbridge::conversion_report_to_text(report);
         }
         return report ? 0 : 1;
     }

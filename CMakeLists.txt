@@ -14,6 +14,7 @@ find_package(assimp CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 
 add_library(assetbridge-product STATIC
+    src/product/conversion_routes.cpp
     src/product/format_capabilities.cpp
     src/product/loss_preflight.cpp
 )
@@ -26,7 +27,9 @@ target_include_directories(assetbridge-product
 target_compile_options(assetbridge-product PRIVATE /W4 /permissive- /utf-8)
 
 add_library(assetbridge-core STATIC
+    src/core/asset_converter.cpp
     src/core/asset_inspector.cpp
+    src/core/conversion_serializer.cpp
     src/core/preflight_report.cpp
     src/core/preflight_serializer.cpp
     src/core/report_serializer.cpp
@@ -78,6 +81,13 @@ add_executable(assetbridge-capability-tests
 target_link_libraries(assetbridge-capability-tests PRIVATE assetbridge-product)
 target_compile_options(assetbridge-capability-tests PRIVATE /W4 /permissive- /utf-8)
 
+add_executable(assetbridge-conversion-route-tests
+    tests/conversion_route_tests.cpp
+)
+
+target_link_libraries(assetbridge-conversion-route-tests PRIVATE assetbridge-product)
+target_compile_options(assetbridge-conversion-route-tests PRIVATE /W4 /permissive- /utf-8)
+
 add_executable(assetbridge-scene-semantics-tests
     tests/scene_semantics_tests.cpp
 )
@@ -90,12 +100,27 @@ target_link_libraries(assetbridge-scene-semantics-tests
 )
 target_compile_options(assetbridge-scene-semantics-tests PRIVATE /W4 /permissive- /utf-8)
 
+add_executable(assetbridge-conversion-tests
+    tests/conversion_tests.cpp
+)
+
+target_link_libraries(assetbridge-conversion-tests PRIVATE assetbridge-core assimp::assimp)
+target_compile_options(assetbridge-conversion-tests PRIVATE /W4 /permissive- /utf-8)
+
 add_test(NAME assetbridge-core-inspector COMMAND assetbridge-tests)
 set_tests_properties(assetbridge-core-inspector PROPERTIES
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
 )
 
 add_test(NAME assetbridge-capability-matrix COMMAND assetbridge-capability-tests)
+add_test(NAME assetbridge-conversion-routes COMMAND assetbridge-conversion-route-tests)
+
+add_test(
+    NAME assetbridge-conversion-core
+    COMMAND assetbridge-conversion-tests
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/assets"
+        "${CMAKE_CURRENT_BINARY_DIR}/conversion-core-output"
+)
 
 add_test(NAME assetbridge-scene-semantics COMMAND assetbridge-scene-semantics-tests)
 set_tests_properties(assetbridge-scene-semantics PROPERTIES
@@ -221,4 +246,62 @@ add_assetbridge_cli_test(assetbridge-cli-preflight-unknown-json
     "-DASSETBRIDGE_OPTION=--json"
     "-DASSETBRIDGE_EXPECTED_EXIT=2"
     "-DASSETBRIDGE_VALIDATE_JSON=preflight_unknown"
+)
+
+add_assetbridge_cli_test(assetbridge-cli-convert-ascii-json
+    "-DASSETBRIDGE_COMMAND=convert"
+    "-DASSETBRIDGE_INPUT=${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/minimal_triangle.obj"
+    "-DASSETBRIDGE_TARGET=GLB"
+    "-DASSETBRIDGE_OUTPUT=${CMAKE_CURRENT_BINARY_DIR}/cli-convert-ascii"
+    "-DASSETBRIDGE_CLEAN_OUTPUT=TRUE"
+    "-DASSETBRIDGE_OPTION=--json"
+    "-DASSETBRIDGE_EXPECTED_EXIT=0"
+    "-DASSETBRIDGE_VALIDATE_JSON=conversion_success"
+)
+
+add_assetbridge_cli_test(assetbridge-cli-convert-unicode-json
+    "-DASSETBRIDGE_COMMAND=convert"
+    "-DASSETBRIDGE_INPUT=${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/中文三角形.obj"
+    "-DASSETBRIDGE_TARGET=glb2"
+    "-DASSETBRIDGE_OUTPUT=${CMAKE_CURRENT_BINARY_DIR}/cli-convert-unicode"
+    "-DASSETBRIDGE_CLEAN_OUTPUT=TRUE"
+    "-DASSETBRIDGE_OPTION=--json"
+    "-DASSETBRIDGE_EXPECTED_EXIT=0"
+    "-DASSETBRIDGE_VALIDATE_JSON=conversion_success"
+)
+
+add_assetbridge_cli_test(assetbridge-cli-convert-invalid-json
+    "-DASSETBRIDGE_COMMAND=convert"
+    "-DASSETBRIDGE_INPUT=${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/invalid.obj"
+    "-DASSETBRIDGE_TARGET=glb"
+    "-DASSETBRIDGE_OUTPUT=${CMAKE_CURRENT_BINARY_DIR}/cli-convert-invalid"
+    "-DASSETBRIDGE_CLEAN_OUTPUT=TRUE"
+    "-DASSETBRIDGE_EXPECT_EMPTY_OUTPUT=TRUE"
+    "-DASSETBRIDGE_OPTION=--json"
+    "-DASSETBRIDGE_EXPECTED_EXIT=1"
+    "-DASSETBRIDGE_VALIDATE_JSON=conversion_import_error"
+)
+
+add_assetbridge_cli_test(assetbridge-cli-convert-unverified-json
+    "-DASSETBRIDGE_COMMAND=convert"
+    "-DASSETBRIDGE_INPUT=${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/unverified_texture.obj"
+    "-DASSETBRIDGE_TARGET=glb"
+    "-DASSETBRIDGE_OUTPUT=${CMAKE_CURRENT_BINARY_DIR}/cli-convert-unverified"
+    "-DASSETBRIDGE_CLEAN_OUTPUT=TRUE"
+    "-DASSETBRIDGE_EXPECT_EMPTY_OUTPUT=TRUE"
+    "-DASSETBRIDGE_OPTION=--json"
+    "-DASSETBRIDGE_EXPECTED_EXIT=1"
+    "-DASSETBRIDGE_VALIDATE_JSON=conversion_unverified"
+)
+
+add_assetbridge_cli_test(assetbridge-cli-convert-unknown-target-json
+    "-DASSETBRIDGE_COMMAND=convert"
+    "-DASSETBRIDGE_INPUT=${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/minimal_triangle.obj"
+    "-DASSETBRIDGE_TARGET=fbx"
+    "-DASSETBRIDGE_OUTPUT=${CMAKE_CURRENT_BINARY_DIR}/cli-convert-unknown"
+    "-DASSETBRIDGE_CLEAN_OUTPUT=TRUE"
+    "-DASSETBRIDGE_EXPECT_EMPTY_OUTPUT=TRUE"
+    "-DASSETBRIDGE_OPTION=--json"
+    "-DASSETBRIDGE_EXPECTED_EXIT=2"
+    "-DASSETBRIDGE_VALIDATE_JSON=conversion_unknown"
 )
