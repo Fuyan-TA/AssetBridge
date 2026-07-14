@@ -188,6 +188,12 @@ add_test(
         --acceptance-output "${CMAKE_CURRENT_BINARY_DIR}/desktop-acceptance-unicode"
 )
 add_test(
+    NAME assetbridge-desktop-acceptance-multimesh
+    COMMAND assetbridge-desktop
+        --acceptance-input "${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/multi_two_triangles.obj"
+        --acceptance-output "${CMAKE_CURRENT_BINARY_DIR}/desktop-acceptance-multimesh"
+)
+add_test(
     NAME assetbridge-desktop-reject-unverified
     COMMAND assetbridge-desktop
         --acceptance-input "${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/unverified_texture.obj"
@@ -196,6 +202,7 @@ add_test(
 set_tests_properties(
     assetbridge-desktop-acceptance-ascii
     assetbridge-desktop-acceptance-unicode
+    assetbridge-desktop-acceptance-multimesh
     assetbridge-desktop-reject-unverified
     PROPERTIES TIMEOUT 30
 )
@@ -313,6 +320,16 @@ add_assetbridge_cli_test(assetbridge-cli-preflight-unicode-glb-json
     "-DASSETBRIDGE_COMPARE_TEXT=TRUE"
 )
 
+add_assetbridge_cli_test(assetbridge-cli-preflight-multimesh-glb-json
+    "-DASSETBRIDGE_COMMAND=preflight"
+    "-DASSETBRIDGE_INPUT=${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/multi_two_triangles.obj"
+    "-DASSETBRIDGE_TARGET=glb"
+    "-DASSETBRIDGE_OPTION=--json"
+    "-DASSETBRIDGE_EXPECTED_EXIT=0"
+    "-DASSETBRIDGE_VALIDATE_JSON=preflight_glb_multi"
+    "-DASSETBRIDGE_COMPARE_TEXT=TRUE"
+)
+
 add_assetbridge_cli_test(assetbridge-cli-preflight-unknown-json
     "-DASSETBRIDGE_COMMAND=preflight"
     "-DASSETBRIDGE_INPUT=${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/minimal_triangle.obj"
@@ -342,6 +359,51 @@ add_assetbridge_cli_test(assetbridge-cli-convert-unicode-json
     "-DASSETBRIDGE_OPTION=--json"
     "-DASSETBRIDGE_EXPECTED_EXIT=0"
     "-DASSETBRIDGE_VALIDATE_JSON=conversion_success"
+)
+
+add_assetbridge_cli_test(assetbridge-cli-convert-multimesh-json
+    "-DASSETBRIDGE_COMMAND=convert"
+    "-DASSETBRIDGE_INPUT=${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/multi_two_triangles.obj"
+    "-DASSETBRIDGE_TARGET=glb"
+    "-DASSETBRIDGE_OUTPUT=${CMAKE_CURRENT_BINARY_DIR}/cli-convert-multimesh"
+    "-DASSETBRIDGE_CLEAN_OUTPUT=TRUE"
+    "-DASSETBRIDGE_OPTION=--json"
+    "-DASSETBRIDGE_EXPECTED_EXIT=0"
+    "-DASSETBRIDGE_VALIDATE_JSON=conversion_success"
+)
+
+add_assetbridge_cli_test(assetbridge-cli-convert-multimesh-quad-json
+    "-DASSETBRIDGE_COMMAND=convert"
+    "-DASSETBRIDGE_INPUT=${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/multi_triangle_quad.obj"
+    "-DASSETBRIDGE_TARGET=glb2"
+    "-DASSETBRIDGE_OUTPUT=${CMAKE_CURRENT_BINARY_DIR}/cli-convert-multimesh-quad"
+    "-DASSETBRIDGE_CLEAN_OUTPUT=TRUE"
+    "-DASSETBRIDGE_OPTION=--json"
+    "-DASSETBRIDGE_EXPECTED_EXIT=0"
+    "-DASSETBRIDGE_VALIDATE_JSON=conversion_success"
+)
+
+add_assetbridge_cli_test(assetbridge-cli-convert-multimesh-unicode-json
+    "-DASSETBRIDGE_COMMAND=convert"
+    "-DASSETBRIDGE_INPUT=${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/中文多网格.obj"
+    "-DASSETBRIDGE_TARGET=GLB"
+    "-DASSETBRIDGE_OUTPUT=${CMAKE_CURRENT_BINARY_DIR}/cli-convert-multimesh-unicode"
+    "-DASSETBRIDGE_CLEAN_OUTPUT=TRUE"
+    "-DASSETBRIDGE_OPTION=--json"
+    "-DASSETBRIDGE_EXPECTED_EXIT=0"
+    "-DASSETBRIDGE_VALIDATE_JSON=conversion_success"
+)
+
+add_assetbridge_cli_test(assetbridge-cli-convert-empty-mesh-json
+    "-DASSETBRIDGE_COMMAND=convert"
+    "-DASSETBRIDGE_INPUT=${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/empty_mesh.obj"
+    "-DASSETBRIDGE_TARGET=glb"
+    "-DASSETBRIDGE_OUTPUT=${CMAKE_CURRENT_BINARY_DIR}/cli-convert-empty-mesh"
+    "-DASSETBRIDGE_CLEAN_OUTPUT=TRUE"
+    "-DASSETBRIDGE_EXPECT_EMPTY_OUTPUT=TRUE"
+    "-DASSETBRIDGE_OPTION=--json"
+    "-DASSETBRIDGE_EXPECTED_EXIT=1"
+    "-DASSETBRIDGE_VALIDATE_JSON=conversion_import_error"
 )
 
 add_assetbridge_cli_test(assetbridge-cli-convert-invalid-json

@@ -53,6 +53,15 @@ nlohmann::json analysis_to_json(const ConversionSceneAnalysis& analysis) {
     };
 }
 
+nlohmann::json triangulation_to_json(const TriangulationDiagnostics& diagnostics) {
+    return {
+        { "source_face_count", diagnostics.source_face_count },
+        { "source_triangle_face_count", diagnostics.source_triangle_face_count },
+        { "source_non_triangle_face_count", diagnostics.source_non_triangle_face_count },
+        { "export_ready_triangle_count", diagnostics.export_ready_triangle_count }
+    };
+}
+
 nlohmann::json validation_to_json(const std::vector<ValidationCheck>& checks) {
     nlohmann::json result = nlohmann::json::array();
     for (const auto& check : checks) {
@@ -99,6 +108,9 @@ nlohmann::json report_json(const ConversionReport& report) {
         } },
         { "source_analysis", report.source_analysis.has_value()
             ? analysis_to_json(*report.source_analysis)
+            : nlohmann::json(nullptr) },
+        { "triangulation", report.triangulation.has_value()
+            ? triangulation_to_json(*report.triangulation)
             : nlohmann::json(nullptr) },
         { "preflight", report.preflight.has_value()
             ? nlohmann::json::parse(preflight_to_json(*report.preflight))
@@ -147,11 +159,21 @@ std::string conversion_report_to_text(const ConversionReport& report) {
 
     if (report.source_analysis.has_value()) {
         output
-            << "Source Triangles: " << report.source_analysis->triangle_count << '\n'
+            << "Source Meshes: " << report.source_analysis->mesh_count << '\n'
+            << "Export-ready Triangles: " << report.source_analysis->triangle_count << '\n'
             << "Source Vertices (diagnostic): " << report.source_analysis->vertex_count << '\n';
+    }
+    if (report.triangulation.has_value()) {
+        output
+            << "Source Faces: " << report.triangulation->source_face_count << '\n'
+            << "Source Triangle Faces: " << report.triangulation->source_triangle_face_count << '\n'
+            << "Source Non-triangle Faces: " << report.triangulation->source_non_triangle_face_count << '\n'
+            << "Export-ready Triangle Count: "
+            << report.triangulation->export_ready_triangle_count << '\n';
     }
     if (report.output_analysis.has_value()) {
         output
+            << "Output Meshes: " << report.output_analysis->mesh_count << '\n'
             << "Output Triangles: " << report.output_analysis->triangle_count << '\n'
             << "Output Vertices (diagnostic): " << report.output_analysis->vertex_count << '\n';
     }
@@ -184,6 +206,7 @@ std::string conversion_argument_error_to_json(
         { "route", nullptr },
         { "output", { { "directory", nullptr }, { "files", nlohmann::json::array() } } },
         { "source_analysis", nullptr },
+        { "triangulation", nullptr },
         { "preflight", nullptr },
         { "processing_steps", nlohmann::json::array() },
         { "output_analysis", nullptr },

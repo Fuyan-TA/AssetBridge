@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <iostream>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -44,6 +45,30 @@ bool all_checks_pass(const assetbridge::ConversionReport& report) {
     return true;
 }
 
+bool has_passed_check(
+    const assetbridge::ConversionReport& report,
+    std::string_view name) {
+    return std::any_of(
+        report.validation_checks.begin(),
+        report.validation_checks.end(),
+        [name](const assetbridge::ValidationCheck& check) {
+            return check.name == name && check.passed;
+        });
+}
+
+assetbridge::ConversionMeshAnalysis test_mesh(
+    std::string name,
+    double center_x) {
+    assetbridge::ConversionMeshAnalysis mesh;
+    mesh.name = std::move(name);
+    mesh.vertex_count = 3;
+    mesh.triangle_count = 1;
+    mesh.bounds.valid = true;
+    mesh.bounds.center = { center_x, 0.5, 0.0 };
+    mesh.bounds.size = { 1.0, 1.0, 0.0 };
+    return mesh;
+}
+
 } // namespace
 
 int wmain(int argc, wchar_t* argv[]) {
@@ -59,6 +84,36 @@ int wmain(int argc, wchar_t* argv[]) {
     std::filesystem::remove_all(output_root, error);
     int failures = 0;
     const AssetConverter converter;
+
+    const std::vector<ConversionMeshAnalysis> reordered_source {
+        test_mesh("DuplicateName", 0.5),
+        test_mesh("", 2.5)
+    };
+    const std::vector<ConversionMeshAnalysis> reordered_output {
+        test_mesh("", 2.5),
+        test_mesh("DuplicateName", 0.5)
+    };
+    const auto reordered_match = match_conversion_meshes(
+        reordered_source,
+        reordered_output);
+    failures += require(
+        reordered_match.complete && reordered_match.matches.size() == 2
+            && reordered_match.matches[0].output_index == 1
+            && reordered_match.matches[1].output_index == 0,
+        "mesh matching must be independent of output array order");
+
+    const std::vector<ConversionMeshAnalysis> duplicate_source {
+        test_mesh("", 0.5),
+        test_mesh("", 0.5)
+    };
+    const auto duplicate_match = match_conversion_meshes(
+        duplicate_source,
+        duplicate_source);
+    failures += require(
+        duplicate_match.complete && duplicate_match.matches.size() == 2
+            && duplicate_match.matches[0].output_index == 0
+            && duplicate_match.matches[1].output_index == 1,
+        "duplicate and empty mesh names must use a stable output-ordinal tie-break");
 
     std::vector<ConversionStage> progress_stages;
     const auto ascii = converter.convert(
@@ -131,6 +186,72 @@ int wmain(int argc, wchar_t* argv[]) {
                 && std::filesystem::file_size(unicode_glb) > 0,
             "Unicode GLB path should exist and be non-empty");
     }
+
+    const auto multi = converter.convert(
+        source_root / "multi_two_triangles.obj",
+        FormatId::glb2,
+        output_root);
+    failures += require(static_cast<bool>(multi), "two independent OBJ meshes should convert");
+    failures += require(all_checks_pass(multi), "multi-mesh round-trip checks should pass");
+    if (multi.source_analysis && multi.output_analysis) {
+        failures += require(
+            multi.source_analysis->mesh_count == 2
+                && multi.output_analysis->mesh_count == 2,
+            "two independent source meshes must remain two output meshes");
+        failures += require(
+            multi.source_analysis->triangle_count == 2
+                && multi.output_analysis->triangle_count == 2,
+            "two-triangle multi-mesh totals should survive round trip");
+        failures += require(
+            multi.output_analysis->diffuse_color.has_value()
+                && std::abs(multi.output_analysis->diffuse_color->blue - 0.9) < 1.0e-4,
+            "shared diffuse material should survive multi-mesh conversion");
+    }
+    failures += require(
+        has_passed_check(multi, "mesh_count")
+            && has_passed_check(multi, "mesh_matching_strategy")
+            && has_passed_check(multi, "per_mesh_aabb")
+            && has_passed_check(multi, "per_mesh_triangle_count"),
+        "multi-mesh conversion should report strict per-mesh validation");
+
+    const auto quad = converter.convert(
+        source_root / "multi_triangle_quad.obj",
+        FormatId::glb2,
+        output_root);
+    failures += require(static_cast<bool>(quad), "triangle plus quad OBJ should convert after preparation");
+    failures += require(all_checks_pass(quad), "triangulated multi-mesh checks should pass");
+    if (quad.triangulation && quad.source_analysis && quad.output_analysis) {
+        failures += require(
+            quad.triangulation->source_face_count == 2
+                && quad.triangulation->source_triangle_face_count == 1
+                && quad.triangulation->source_non_triangle_face_count == 1
+                && quad.triangulation->export_ready_triangle_count == 3,
+            "triangulation diagnostics should distinguish source faces from export-ready triangles");
+        failures += require(
+            quad.source_analysis->mesh_count == 2
+                && quad.output_analysis->mesh_count == 2
+                && quad.source_analysis->triangle_count == 3
+                && quad.output_analysis->triangle_count == 3,
+            "triangle plus quad should become three triangles without merging meshes");
+    }
+
+    const auto unicode_multi = converter.convert(
+        source_root / L"中文多网格.obj",
+        FormatId::glb2,
+        output_root);
+    failures += require(
+        unicode_multi && unicode_multi.output_analysis
+            && unicode_multi.output_analysis->mesh_count == 2,
+        "Unicode OBJ/MTL multi-mesh conversion should preserve two meshes");
+
+    const auto empty_mesh = converter.convert(
+        source_root / "empty_mesh.obj",
+        FormatId::glb2,
+        output_root);
+    failures += require(!empty_mesh, "empty or faceless OBJ mesh should be rejected");
+    failures += require(
+        !std::filesystem::exists(output_root / "empty_mesh"),
+        "empty mesh rejection must not leave a final directory");
 
     const auto invalid = converter.convert(
         source_root / "invalid.obj",

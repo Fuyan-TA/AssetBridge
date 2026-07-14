@@ -100,6 +100,9 @@ std::string_view DesktopAppState::geometry_notice() const noexcept {
     if (!has_non_triangle_faces()) {
         return {};
     }
+    if (status_ == AppStatus::ready) {
+        return "Source contains non-triangle faces; the verified OBJ to GLB route will triangulate them during export preparation.";
+    }
     return "Source contains non-triangle faces; conversion will triangulate when the route supports this asset.";
 }
 

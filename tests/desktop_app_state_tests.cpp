@@ -135,14 +135,14 @@ int main() {
         blocked_preflight(unicode_path, {
             {
                 "route_feature_unverified",
-                assetbridge::AssetFeature::multiple_meshes,
+                assetbridge::AssetFeature::external_textures,
                 assetbridge::LossSeverity::blocking,
                 false,
                 "Feature has not been verified for this AssetBridge conversion route."
             },
             {
                 "route_feature_unverified",
-                assetbridge::AssetFeature::external_textures,
+                assetbridge::AssetFeature::node_hierarchy,
                 assetbridge::LossSeverity::blocking,
                 false,
                 "Feature has not been verified for this AssetBridge conversion route."
@@ -162,13 +162,13 @@ int main() {
         "all detected blocking reasons should be available to the UI");
     failures += require(
         blocked.diagnostics()[0].code == "route_feature_unverified"
-            && blocked.diagnostics()[0].feature_code == "multiple_meshes"
-            && blocked.diagnostics()[0].message == "Multiple meshes: 29 — not verified yet"
+            && blocked.diagnostics()[0].feature_code == "external_textures"
+            && blocked.diagnostics()[0].message == "External textures — not verified yet"
             && blocked.diagnostics()[0].future_support_candidate,
-        "multiple-mesh diagnostic should preserve stable codes, count, and future scope");
+        "external-texture diagnostic should preserve stable codes and future scope");
     failures += require(
-        blocked.diagnostics()[1].feature_code == "external_textures"
-            && blocked.diagnostics()[1].message == "External textures — not verified yet",
+        blocked.diagnostics()[1].feature_code == "node_hierarchy"
+            && blocked.diagnostics()[1].message == "Meaningful hierarchy — not verified yet",
         "multiple concrete diagnostics should retain distinct user messages");
     failures += require(
         blocked.has_non_triangle_faces(),
@@ -177,6 +177,28 @@ int main() {
         blocked.geometry_notice()
             == "Source contains non-triangle faces; conversion will triangulate when the route supports this asset.",
         "non-triangle geometry notice should remain explicit and stable");
+
+    DesktopAppState safe_multi;
+    safe_multi.select_files({ unicode_path });
+    auto safe_multi_inspection = successful_inspection(unicode_path);
+    safe_multi_inspection.summary->mesh_count = 29;
+    safe_multi_inspection.summary->face_count = 87428;
+    safe_multi_inspection.summary->triangle_count = 0;
+    auto safe_multi_preflight = safe_preflight(unicode_path);
+    safe_multi_preflight.features->mesh_count = 29;
+    safe_multi.complete_inspection(
+        std::move(safe_multi_inspection),
+        std::move(safe_multi_preflight));
+    safe_multi.set_output_root(L"输出");
+    failures += require(
+        safe_multi.status() == AppStatus::ready
+            && safe_multi.can_convert()
+            && safe_multi.diagnostics().empty(),
+        "safe flat multi-mesh preflight should enable conversion without diagnostics");
+    failures += require(
+        safe_multi.geometry_notice()
+            == "Source contains non-triangle faces; the verified OBJ to GLB route will triangulate them during export preparation.",
+        "safe multi-mesh geometry should explain export-preparation triangulation");
 
     DesktopAppState success;
     success.select_files({ unicode_path });
