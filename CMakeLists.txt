@@ -11,7 +11,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 find_package(assimp CONFIG REQUIRED)
+find_package(imgui CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
+find_package(SDL3 CONFIG REQUIRED)
 
 add_library(assetbridge-product STATIC
     src/product/conversion_routes.cpp
@@ -51,12 +53,42 @@ target_link_libraries(assetbridge-core
 
 target_compile_options(assetbridge-core PRIVATE /W4 /permissive- /utf-8)
 
+add_library(assetbridge-desktop-model STATIC
+    src/desktop/desktop_app_state.cpp
+)
+
+target_include_directories(assetbridge-desktop-model
+    PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+target_link_libraries(assetbridge-desktop-model PUBLIC assetbridge-core)
+target_compile_options(assetbridge-desktop-model PRIVATE /W4 /permissive- /utf-8)
+
 add_executable(assetbridge-cli
     apps/assetbridge-cli/main.cpp
 )
 
 target_link_libraries(assetbridge-cli PRIVATE assetbridge-core)
 target_compile_options(assetbridge-cli PRIVATE /W4 /permissive- /utf-8)
+
+add_executable(assetbridge-desktop WIN32
+    apps/assetbridge-desktop/main.cpp
+    src/platform/windows/windows_platform.cpp
+)
+
+target_link_libraries(assetbridge-desktop
+    PRIVATE
+        assetbridge-desktop-model
+        imgui::imgui
+        SDL3::SDL3
+        d3d11
+        dxgi
+        ole32
+        shell32
+)
+target_compile_definitions(assetbridge-desktop PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
+target_compile_options(assetbridge-desktop PRIVATE /W4 /permissive- /utf-8)
 
 enable_testing()
 
@@ -107,6 +139,13 @@ add_executable(assetbridge-conversion-tests
 target_link_libraries(assetbridge-conversion-tests PRIVATE assetbridge-core assimp::assimp)
 target_compile_options(assetbridge-conversion-tests PRIVATE /W4 /permissive- /utf-8)
 
+add_executable(assetbridge-desktop-state-tests
+    tests/desktop_app_state_tests.cpp
+)
+
+target_link_libraries(assetbridge-desktop-state-tests PRIVATE assetbridge-desktop-model)
+target_compile_options(assetbridge-desktop-state-tests PRIVATE /W4 /permissive- /utf-8)
+
 add_test(NAME assetbridge-core-inspector COMMAND assetbridge-tests)
 set_tests_properties(assetbridge-core-inspector PROPERTIES
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
@@ -126,6 +165,41 @@ add_test(NAME assetbridge-scene-semantics COMMAND assetbridge-scene-semantics-te
 set_tests_properties(assetbridge-scene-semantics PROPERTIES
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
 )
+
+add_test(NAME assetbridge-desktop-state COMMAND assetbridge-desktop-state-tests)
+add_test(NAME assetbridge-desktop-smoke COMMAND assetbridge-desktop --smoke-test)
+add_test(
+    NAME assetbridge-desktop-smoke-150
+    COMMAND assetbridge-desktop --smoke-test --ui-scale-150
+)
+set_tests_properties(assetbridge-desktop-smoke PROPERTIES TIMEOUT 30)
+set_tests_properties(assetbridge-desktop-smoke-150 PROPERTIES TIMEOUT 30)
+
+add_test(
+    NAME assetbridge-desktop-acceptance-ascii
+    COMMAND assetbridge-desktop
+        --acceptance-input "${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/minimal_triangle.obj"
+        --acceptance-output "${CMAKE_CURRENT_BINARY_DIR}/desktop-acceptance-ascii"
+)
+add_test(
+    NAME assetbridge-desktop-acceptance-unicode
+    COMMAND assetbridge-desktop
+        --acceptance-input "${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/中文三角形.obj"
+        --acceptance-output "${CMAKE_CURRENT_BINARY_DIR}/desktop-acceptance-unicode"
+)
+add_test(
+    NAME assetbridge-desktop-reject-unverified
+    COMMAND assetbridge-desktop
+        --acceptance-input "${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/unverified_texture.obj"
+        --acceptance-output "${CMAKE_CURRENT_BINARY_DIR}/desktop-acceptance-unverified"
+)
+set_tests_properties(
+    assetbridge-desktop-acceptance-ascii
+    assetbridge-desktop-acceptance-unicode
+    assetbridge-desktop-reject-unverified
+    PROPERTIES TIMEOUT 30
+)
+set_tests_properties(assetbridge-desktop-reject-unverified PROPERTIES WILL_FAIL TRUE)
 
 function(add_assetbridge_cli_test test_name)
     add_test(

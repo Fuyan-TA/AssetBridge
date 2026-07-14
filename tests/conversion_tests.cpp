@@ -1,10 +1,12 @@
 #include "assetbridge/core/asset_converter.hpp"
 #include "assetbridge/core/asset_inspector.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <filesystem>
 #include <iostream>
 #include <string_view>
+#include <vector>
 
 namespace {
 
@@ -58,16 +60,24 @@ int wmain(int argc, wchar_t* argv[]) {
     int failures = 0;
     const AssetConverter converter;
 
+    std::vector<ConversionStage> progress_stages;
     const auto ascii = converter.convert(
         source_root / "minimal_triangle.obj",
         FormatId::glb2,
-        output_root);
+        output_root,
+        [&progress_stages](ConversionStage stage) { progress_stages.push_back(stage); });
     failures += require(static_cast<bool>(ascii), "ASCII OBJ to GLB conversion should succeed");
     failures += require(
         ascii.output_directory.has_value()
             && ascii.output_directory->filename() == "minimal_triangle",
         "first output directory should preserve the source stem");
     failures += require(all_checks_pass(ascii), "all ASCII round-trip checks should pass");
+    failures += require(
+        std::find(progress_stages.begin(), progress_stages.end(), ConversionStage::exporting)
+                != progress_stages.end()
+            && std::find(progress_stages.begin(), progress_stages.end(), ConversionStage::validating)
+                != progress_stages.end(),
+        "conversion progress should report real export and validation stages");
     failures += require(
         ascii.source_analysis.has_value() && ascii.output_analysis.has_value(),
         "successful conversion should include both analyses");

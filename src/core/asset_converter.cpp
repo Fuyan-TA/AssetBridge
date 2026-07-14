@@ -426,7 +426,8 @@ std::string_view to_string(ConversionErrorCode code) noexcept {
 ConversionReport AssetConverter::convert(
     const std::filesystem::path& input,
     FormatId target,
-    const std::filesystem::path& output_root) const {
+    const std::filesystem::path& output_root,
+    const ConversionProgressCallback& progress) const {
     const auto total_start = Clock::now();
     ConversionReport report;
     report.source_path = normalized_absolute(input);
@@ -458,6 +459,7 @@ ConversionReport AssetConverter::convert(
         return report;
     }
 
+    if (progress) progress(ConversionStage::preflight);
     const auto preflight_start = Clock::now();
     report.preflight = create_preflight_report(input, target);
     const AssetInspector inspector;
@@ -553,6 +555,7 @@ ConversionReport AssetConverter::convert(
         "aiProcess_Triangulate",
         "aiProcess_ValidateDataStructure"
     };
+    if (progress) progress(ConversionStage::importing);
     const auto import_start = Clock::now();
     Assimp::Importer source_importer;
     const aiScene* source_scene = source_importer.ReadFile(
@@ -578,6 +581,7 @@ ConversionReport AssetConverter::convert(
     }
     report.source_analysis = source_analysis.analysis;
 
+    if (progress) progress(ConversionStage::exporting);
     const auto export_start = Clock::now();
     Assimp::Exporter exporter;
     const aiReturn export_result = exporter.Export(
@@ -594,6 +598,7 @@ ConversionReport AssetConverter::convert(
         return report;
     }
 
+    if (progress) progress(ConversionStage::reimporting);
     const auto reimport_start = Clock::now();
     Assimp::Importer output_importer;
     const aiScene* output_scene = output_importer.ReadFile(
@@ -610,6 +615,7 @@ ConversionReport AssetConverter::convert(
         return report;
     }
 
+    if (progress) progress(ConversionStage::validating);
     const auto validation_start = Clock::now();
     const auto output_analysis = analyze_scene_for_conversion(output_scene);
     if (!output_analysis.valid) {
@@ -663,6 +669,7 @@ ConversionReport AssetConverter::convert(
         return report;
     }
 
+    if (progress) progress(ConversionStage::committing);
     std::filesystem::rename(temporary.path(), *final_directory, filesystem_error);
     if (filesystem_error) {
         set_error(
