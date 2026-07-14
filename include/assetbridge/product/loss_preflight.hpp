@@ -1,6 +1,7 @@
 #pragma once
 
 #include "assetbridge/product/format_capabilities.hpp"
+#include "assetbridge/product/conversion_routes.hpp"
 
 #include <optional>
 #include <string>
@@ -50,6 +51,13 @@ struct PreflightDecision {
 [[nodiscard]] std::string_view to_string(OverallResult result) noexcept;
 
 [[nodiscard]] PreflightDecision evaluate_preflight(
+    FormatId target,
+    const AssetFeatures& source_features,
+    bool runtime_exporter_available,
+    bool asset_valid = true);
+
+[[nodiscard]] PreflightDecision evaluate_route_preflight(
+    FormatId source,
     FormatId target,
     const AssetFeatures& source_features,
     bool runtime_exporter_available,

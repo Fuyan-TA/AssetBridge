@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <initializer_list>
@@ -269,6 +270,8 @@ void validate_preflight_success(
     std::string_view expected_target,
     std::string_view expected_compatibility,
     std::string_view expected_overall,
+    bool expected_product_enabled,
+    bool expected_verified,
     const std::filesystem::path& text_path) {
     require_exact_keys(report, {
         "schema",
@@ -289,15 +292,18 @@ void validate_preflight_success(
     require(report.at("error").is_null(), "successful preflight error must be null");
     require(report.at("product_enabled").is_boolean(), "product_enabled must be boolean");
     require(report.at("verified").is_boolean(), "verified must be boolean");
-    require(report.at("product_enabled") == false, "Phase 1C output must remain disabled");
-    require(report.at("verified") == false, "Phase 1C output must remain unverified");
+    require(
+        report.at("product_enabled") == expected_product_enabled,
+        "preflight route product_enabled mismatch");
+    require(
+        report.at("verified") == expected_verified,
+        "preflight route verified mismatch");
     require(
         report.at("compatibility_result").get<std::string>() == expected_compatibility,
         "compatibility mismatch");
     require(
         report.at("overall_result").get<std::string>() == expected_overall,
         "overall result mismatch");
-    require(report.at("overall_result") != "safe", "Phase 1C must not report overall safe");
 
     const auto& source = report.at("source");
     require_exact_keys(source, { "file", "format_id", "product_enabled", "verified", "valid" });
@@ -318,8 +324,10 @@ void validate_preflight_success(
         target.at("format_id").get<std::string>() == expected_target,
         "target canonical ID mismatch");
     require(target.at("runtime_exporter_available") == true, "expected runtime exporter is absent");
-    require(target.at("product_enabled") == false, "target must remain disabled");
-    require(target.at("verified") == false, "target must remain unverified");
+    require(
+        target.at("product_enabled") == expected_product_enabled,
+        "target route product_enabled mismatch");
+    require(target.at("verified") == expected_verified, "target route verified mismatch");
 
     validate_preflight_features(report.at("features"));
     validate_assessments(report.at("assessments"));
@@ -398,6 +406,210 @@ void validate_unknown_target(const Json& report) {
     require(report.at("error").at("code") == "unknown_target_format", "unknown target error mismatch");
 }
 
+std::filesystem::path path_from_utf8(std::string_view value) {
+    const auto* begin = reinterpret_cast<const char8_t*>(value.data());
+    return std::filesystem::path(std::u8string(begin, begin + value.size()));
+}
+
+void validate_conversion_analysis(const Json& analysis) {
+    require_exact_keys(analysis, {
+        "mesh_count",
+        "vertex_count",
+        "triangle_count",
+        "referenced_material_count",
+        "has_normals",
+        "has_uv0",
+        "bounds",
+        "diffuse_color"
+    });
+    for (const auto field : {
+             "mesh_count", "vertex_count", "triangle_count", "referenced_material_count" }) {
+        require(analysis.at(field).is_number_unsigned(), "conversion analysis count must be unsigned");
+    }
+    require(analysis.at("mesh_count") == 1, "converted mesh count mismatch");
+    require(analysis.at("triangle_count") == 1, "converted triangle count mismatch");
+    require(analysis.at("referenced_material_count") == 1, "referenced material count mismatch");
+    require(analysis.at("has_normals") == true, "converted scene must contain normals");
+    require(analysis.at("has_uv0") == true, "converted scene must contain UV0");
+
+    const auto& bounds = analysis.at("bounds");
+    require_exact_keys(bounds, { "valid", "minimum", "maximum", "center", "size" });
+    require(bounds.at("valid") == true, "conversion bounds must be valid");
+    for (const auto vector_name : { "minimum", "maximum", "center", "size" }) {
+        const auto& vector = bounds.at(vector_name);
+        require_exact_keys(vector, { "x", "y", "z" });
+        require(vector.at("x").is_number(), "bounds x must be numeric");
+        require(vector.at("y").is_number(), "bounds y must be numeric");
+        require(vector.at("z").is_number(), "bounds z must be numeric");
+    }
+
+    const auto& color = analysis.at("diffuse_color");
+    require_exact_keys(color, { "red", "green", "blue", "alpha" });
+    for (const auto channel : { "red", "green", "blue", "alpha" }) {
+        require(color.at(channel).is_number(), "diffuse color channel must be numeric");
+    }
+}
+
+void validate_conversion_success(const Json& report, const std::filesystem::path& input) {
+    require_exact_keys(report, {
+        "schema",
+        "status",
+        "source",
+        "route",
+        "output",
+        "source_analysis",
+        "preflight",
+        "processing_steps",
+        "output_analysis",
+        "validation_checks",
+        "warnings",
+        "error",
+        "assimp_version",
+        "timings_ms"
+    });
+    require(report.at("schema") == "assetbridge.conversion.v1", "conversion schema mismatch");
+    require(report.at("status") == "success", "conversion success status mismatch");
+    require(report.at("error").is_null(), "successful conversion error must be null");
+
+    const auto& source = report.at("source");
+    require_exact_keys(source, { "path", "format_id" });
+    require(source.at("path") == expected_report_path(input), "conversion source path mismatch");
+    require(source.at("format_id") == "obj", "conversion source canonical ID mismatch");
+
+    const auto& route = report.at("route");
+    require_exact_keys(route, {
+        "source_format_id", "target_format_id", "product_enabled", "verified" });
+    require(route.at("source_format_id") == "obj", "route source canonical ID mismatch");
+    require(route.at("target_format_id") == "glb2", "route target canonical ID mismatch");
+    require(route.at("product_enabled") == true, "OBJ to GLB2 route must be enabled");
+    require(route.at("verified") == true, "OBJ to GLB2 route must be verified");
+
+    const auto& output = report.at("output");
+    require_exact_keys(output, { "directory", "files" });
+    require(output.at("directory").is_string(), "successful output directory must be a string");
+    require(output.at("files").is_array() && output.at("files").size() == 2,
+        "successful conversion must report GLB and JSON files");
+    const std::filesystem::path output_directory =
+        path_from_utf8(output.at("directory").get_ref<const std::string&>());
+    require(std::filesystem::is_directory(output_directory), "reported output directory does not exist");
+
+    std::filesystem::path glb_path;
+    std::filesystem::path report_path;
+    for (const auto& file : output.at("files")) {
+        require(file.is_string(), "output file path must be a string");
+        const auto path = path_from_utf8(file.get_ref<const std::string&>());
+        require(std::filesystem::is_regular_file(path), "reported output file does not exist");
+        if (path.extension() == ".glb") {
+            glb_path = path;
+        } else if (path.filename() == "conversion-report.json") {
+            report_path = path;
+        }
+    }
+    require(!glb_path.empty() && std::filesystem::file_size(glb_path) > 0,
+        "generated GLB must exist and be non-empty");
+    require(!report_path.empty(), "conversion-report.json was not reported");
+
+    validate_conversion_analysis(report.at("source_analysis"));
+    validate_conversion_analysis(report.at("output_analysis"));
+    require(
+        report.at("source_analysis").at("triangle_count")
+            == report.at("output_analysis").at("triangle_count"),
+        "source and output triangle counts must match");
+    const auto& source_color = report.at("source_analysis").at("diffuse_color");
+    const auto& output_color = report.at("output_analysis").at("diffuse_color");
+    for (const auto channel : { "red", "green", "blue" }) {
+        require(
+            std::abs(source_color.at(channel).get<double>()
+                - output_color.at(channel).get<double>()) < 1.0e-4,
+            "MTL diffuse color did not survive conversion");
+    }
+    const bool unicode_asset = input.filename() == L"中文三角形.obj";
+    const double expected_red = unicode_asset ? 0.125 : 0.8;
+    const double expected_green = unicode_asset ? 0.5 : 0.8;
+    const double expected_blue = unicode_asset ? 0.875 : 0.8;
+    require(std::abs(source_color.at("red").get<double>() - expected_red) < 1.0e-4,
+        "source MTL red channel was not resolved");
+    require(std::abs(source_color.at("green").get<double>() - expected_green) < 1.0e-4,
+        "source MTL green channel was not resolved");
+    require(std::abs(source_color.at("blue").get<double>() - expected_blue) < 1.0e-4,
+        "source MTL blue channel was not resolved");
+
+    const auto& preflight = report.at("preflight");
+    require(preflight.at("schema") == "assetbridge.preflight.v1", "embedded preflight schema mismatch");
+    require(preflight.at("overall_result") == "safe", "verified route preflight must be safe");
+    require(preflight.at("product_enabled") == true, "embedded preflight route must be enabled");
+    require(preflight.at("verified") == true, "embedded preflight route must be verified");
+
+    const auto& steps = report.at("processing_steps");
+    require(steps.is_array() && steps.size() == 2, "processing step list must be exact");
+    require(std::find(steps.begin(), steps.end(), "aiProcess_Triangulate") != steps.end(),
+        "triangulation step must be recorded");
+    require(std::find(steps.begin(), steps.end(), "aiProcess_ValidateDataStructure") != steps.end(),
+        "data validation step must be recorded");
+    for (const auto forbidden : {
+             "GenerateNormals", "CalcTangentSpace", "JoinIdenticalVertices",
+             "OptimizeMeshes", "MakeLeftHanded", "FlipUVs" }) {
+        require(std::find(steps.begin(), steps.end(), forbidden) == steps.end(),
+            "forbidden processing step was reported");
+    }
+
+    const auto& checks = report.at("validation_checks");
+    require(checks.is_array() && checks.size() >= 10, "round-trip checks are incomplete");
+    std::vector<std::string> check_names;
+    for (const auto& check : checks) {
+        require_exact_keys(check, { "name", "passed", "details" });
+        require(check.at("name").is_string(), "validation check name must be a string");
+        require(check.at("passed") == true, "all committed validation checks must pass");
+        require(check.at("details").is_string(), "validation details must be a string");
+        check_names.push_back(check.at("name").get<std::string>());
+    }
+    for (const auto required : {
+             "output_file_nonempty", "reimport_scene_valid", "mesh_indices_valid",
+             "triangle_count", "aabb_center", "aabb_size", "normals_preserved",
+             "uv0_preserved", "referenced_material_present", "diffuse_color" }) {
+        require(std::find(check_names.begin(), check_names.end(), required) != check_names.end(),
+            "required validation check is missing");
+    }
+
+    require(report.at("warnings").is_array(), "warnings must be an array");
+    require(report.at("assimp_version").is_string()
+        && !report.at("assimp_version").get<std::string>().empty(),
+        "Assimp version must be reported");
+    const auto& timings = report.at("timings_ms");
+    require_exact_keys(timings, {
+        "preflight", "import", "export", "reimport", "validation", "total" });
+    for (const auto field : { "preflight", "import", "export", "reimport", "validation", "total" }) {
+        require(timings.at(field).is_number() && timings.at(field).get<double>() >= 0.0,
+            "conversion timing must be a non-negative number");
+    }
+
+    std::ifstream committed_input(report_path, std::ios::binary);
+    require(static_cast<bool>(committed_input), "could not reopen committed conversion report");
+    const Json committed_report = Json::parse(committed_input);
+    require(committed_report == report, "stdout JSON and committed report must match");
+
+    for (const auto& entry : std::filesystem::directory_iterator(output_directory.parent_path())) {
+        require(!entry.path().filename().string().starts_with(".assetbridge-tmp-"),
+            "successful conversion left a temporary directory");
+    }
+}
+
+void validate_conversion_error(const Json& report, std::string_view expected_code) {
+    require(report.at("schema") == "assetbridge.conversion.v1", "conversion error schema mismatch");
+    require(report.at("status") == "error", "conversion error status mismatch");
+    const auto& output = report.at("output");
+    require(output.at("directory").is_null(), "failed conversion must not report a final directory");
+    require(output.at("files").is_array() && output.at("files").empty(),
+        "failed conversion must not report output files");
+    require(report.at("error").is_object(), "failed conversion must report an error object");
+    require(
+        report.at("error").at("code").get<std::string>() == expected_code,
+        "conversion error code mismatch");
+    require(report.at("error").at("message").is_string()
+        && !report.at("error").at("message").get<std::string>().empty(),
+        "conversion error message must be non-empty");
+}
+
 } // namespace
 
 int wmain(int argc, wchar_t* argv[]) {
@@ -429,6 +641,8 @@ int wmain(int argc, wchar_t* argv[]) {
                 "stl",
                 "lossy",
                 "lossy",
+                false,
+                false,
                 std::filesystem::path(argv[4]));
         } else if (mode == L"preflight_glb") {
             require(argc == 5, "preflight_glb requires input and text files");
@@ -437,11 +651,25 @@ int wmain(int argc, wchar_t* argv[]) {
                 std::filesystem::path(argv[3]),
                 "glb2",
                 "safe",
-                "unverified",
+                "safe",
+                true,
+                true,
                 std::filesystem::path(argv[4]));
         } else if (mode == L"preflight_unknown") {
             require(argc == 4, "preflight_unknown requires the requested input file");
             validate_unknown_target(report);
+        } else if (mode == L"conversion_success") {
+            require(argc == 4, "conversion_success requires an input file");
+            validate_conversion_success(report, std::filesystem::path(argv[3]));
+        } else if (mode == L"conversion_import_error") {
+            require(argc == 4, "conversion_import_error requires an input file");
+            validate_conversion_error(report, "import_failed");
+        } else if (mode == L"conversion_unverified") {
+            require(argc == 4, "conversion_unverified requires an input file");
+            validate_conversion_error(report, "route_feature_unverified");
+        } else if (mode == L"conversion_unknown") {
+            require(argc == 4, "conversion_unknown requires an input file");
+            validate_conversion_error(report, "unknown_target_format");
         } else {
             throw std::runtime_error("Unknown JSON validation mode");
         }

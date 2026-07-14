@@ -72,15 +72,23 @@ PreflightReport create_preflight_report(
         features = *inspection.features;
     }
 
-    auto decision = evaluate_preflight(
-        target,
-        features,
-        runtime_exporter_available,
-        static_cast<bool>(inspection));
+    const auto source = source_status(file);
+    auto decision = source.format.has_value()
+        ? evaluate_route_preflight(
+            *source.format,
+            target,
+            features,
+            runtime_exporter_available,
+            static_cast<bool>(inspection))
+        : evaluate_preflight(
+            target,
+            features,
+            runtime_exporter_available,
+            static_cast<bool>(inspection));
 
     return {
         normalized_report_path(file, inspection),
-        source_status(file),
+        source,
         inspection.error_code,
         std::move(inspection.error_message),
         std::move(inspection.features),
