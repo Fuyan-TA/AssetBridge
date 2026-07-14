@@ -10,6 +10,7 @@
 #include "assetbridge/core/preflight_report.hpp"
 #include "assetbridge/desktop/desktop_app_state.hpp"
 #include "assetbridge/platform/windows/windows_platform.hpp"
+#include "assetbridge/version.hpp"
 
 #include <Windows.h>
 #include <d3d11.h>
@@ -299,7 +300,7 @@ void draw_ui(
     ImGui::SetWindowFontScale(1.0F);
     ImGui::TextColored({ 0.62F, 0.68F, 0.76F, 1.0F }, "Lightweight 3D Asset Converter");
     ImGui::SameLine();
-    ImGui::TextDisabled("  v0.1 / Phase 3 MVP");
+    ImGui::TextDisabled("  v%s", assetbridge::version.data());
     if (!cjk_font_available) {
         ImGui::TextColored({ 0.98F, 0.70F, 0.25F, 1.0F },
             "CJK display font was not found; Unicode file operations remain enabled.");

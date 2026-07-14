@@ -199,6 +199,15 @@ int main() {
         safe_multi.geometry_notice()
             == "Source contains non-triangle faces; the verified OBJ to GLB route will triangulate them during export preparation.",
         "safe multi-mesh geometry should explain export-preparation triangulation");
+    failures += require(
+        safe_multi.begin_conversion(),
+        "safe multi-mesh state should enter conversion");
+    safe_multi.mark_validating();
+    safe_multi.complete_conversion(successful_conversion(L"输出"));
+    failures += require(
+        safe_multi.geometry_notice()
+            == "Source contained non-triangle faces; the verified OBJ to GLB route triangulated them during export preparation.",
+        "successful multi-mesh conversion should describe triangulation in past tense");
 
     DesktopAppState success;
     success.select_files({ unicode_path });

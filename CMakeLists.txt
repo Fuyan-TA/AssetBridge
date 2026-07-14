@@ -10,6 +10,22 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+option(
+    ASSETBRIDGE_PACKAGE_GUI_SMOKE
+    "Run packaged GUI and 150% DPI smoke tests when Release package contents are verified"
+    ON
+)
+
+set(ASSETBRIDGE_GENERATED_INCLUDE_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated/include")
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/assetbridge_version.hpp.in"
+    "${ASSETBRIDGE_GENERATED_INCLUDE_DIR}/assetbridge/version.hpp"
+    @ONLY
+)
+
+add_library(assetbridge-version INTERFACE)
+target_include_directories(assetbridge-version INTERFACE "${ASSETBRIDGE_GENERATED_INCLUDE_DIR}")
+
 find_package(assimp CONFIG REQUIRED)
 find_package(imgui CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
@@ -69,7 +85,7 @@ add_executable(assetbridge-cli
     apps/assetbridge-cli/main.cpp
 )
 
-target_link_libraries(assetbridge-cli PRIVATE assetbridge-core)
+target_link_libraries(assetbridge-cli PRIVATE assetbridge-core assetbridge-version)
 target_compile_options(assetbridge-cli PRIVATE /W4 /permissive- /utf-8)
 
 add_executable(assetbridge-desktop WIN32
@@ -86,6 +102,7 @@ target_link_libraries(assetbridge-desktop
         dxgi
         ole32
         shell32
+        assetbridge-version
 )
 target_compile_definitions(assetbridge-desktop PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
 target_compile_options(assetbridge-desktop PRIVATE /W4 /permissive- /utf-8)
@@ -441,3 +458,128 @@ add_assetbridge_cli_test(assetbridge-cli-convert-unknown-target-json
     "-DASSETBRIDGE_EXPECTED_EXIT=2"
     "-DASSETBRIDGE_VALIDATE_JSON=conversion_unknown"
 )
+
+add_test(
+    NAME assetbridge-cli-version
+    COMMAND assetbridge-cli --version
+)
+set_tests_properties(assetbridge-cli-version PROPERTIES
+    PASS_REGULAR_EXPRESSION "^AssetBridge ${PROJECT_VERSION}"
+)
+
+set_tests_properties(
+    assetbridge-core-inspector
+    assetbridge-capability-matrix
+    assetbridge-conversion-routes
+    assetbridge-conversion-core
+    assetbridge-scene-semantics
+    PROPERTIES LABELS "unit"
+)
+set_tests_properties(assetbridge-desktop-state PROPERTIES LABELS "unit;desktop-state")
+set_tests_properties(
+    assetbridge-desktop-smoke
+    assetbridge-desktop-smoke-150
+    PROPERTIES LABELS "gui"
+)
+set_tests_properties(
+    assetbridge-desktop-acceptance-ascii
+    assetbridge-desktop-acceptance-unicode
+    assetbridge-desktop-acceptance-multimesh
+    assetbridge-desktop-reject-unverified
+    PROPERTIES LABELS "gui;acceptance"
+)
+
+get_property(ASSETBRIDGE_REGISTERED_TESTS DIRECTORY PROPERTY TESTS)
+foreach(ASSETBRIDGE_TEST IN LISTS ASSETBRIDGE_REGISTERED_TESTS)
+    if(ASSETBRIDGE_TEST MATCHES "^assetbridge-cli-")
+        set_property(TEST "${ASSETBRIDGE_TEST}" APPEND PROPERTY LABELS "cli")
+    endif()
+    if(ASSETBRIDGE_TEST MATCHES "^assetbridge-cli-convert-")
+        set_property(TEST "${ASSETBRIDGE_TEST}" APPEND PROPERTY LABELS "acceptance")
+    endif()
+endforeach()
+
+set(CMAKE_INSTALL_SYSTEM_RUNTIME_DESTINATION ".")
+set(CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS_NO_WARNINGS ON)
+set(CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS_SKIP ON)
+include(InstallRequiredSystemLibraries)
+
+set(ASSETBRIDGE_RUNTIME_SEARCH_DIRECTORIES)
+foreach(ASSETBRIDGE_RUNTIME_LIBRARY IN LISTS CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS)
+    get_filename_component(ASSETBRIDGE_RUNTIME_DIRECTORY
+        "${ASSETBRIDGE_RUNTIME_LIBRARY}" DIRECTORY)
+    list(APPEND ASSETBRIDGE_RUNTIME_SEARCH_DIRECTORIES
+        "${ASSETBRIDGE_RUNTIME_DIRECTORY}")
+endforeach()
+list(REMOVE_DUPLICATES ASSETBRIDGE_RUNTIME_SEARCH_DIRECTORIES)
+
+set(ASSETBRIDGE_REQUIRED_MSVC_RUNTIME_LIBS)
+foreach(ASSETBRIDGE_RUNTIME_LIBRARY IN LISTS CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS)
+    get_filename_component(ASSETBRIDGE_RUNTIME_NAME
+        "${ASSETBRIDGE_RUNTIME_LIBRARY}" NAME)
+    string(TOLOWER "${ASSETBRIDGE_RUNTIME_NAME}" ASSETBRIDGE_RUNTIME_NAME_LOWER)
+    if(ASSETBRIDGE_RUNTIME_NAME_LOWER MATCHES
+        "^(msvcp140|msvcp140_atomic_wait|vcruntime140|vcruntime140_1)\\.dll$")
+        list(APPEND ASSETBRIDGE_REQUIRED_MSVC_RUNTIME_LIBS
+            "${ASSETBRIDGE_RUNTIME_LIBRARY}")
+    endif()
+endforeach()
+if(NOT ASSETBRIDGE_REQUIRED_MSVC_RUNTIME_LIBS)
+    message(FATAL_ERROR "Required MSVC redistributable libraries were not discovered.")
+endif()
+
+install(
+    TARGETS assetbridge-cli assetbridge-desktop
+    RUNTIME_DEPENDENCY_SET assetbridge-runtime-dependencies
+    RUNTIME DESTINATION "."
+)
+install(
+    RUNTIME_DEPENDENCY_SET assetbridge-runtime-dependencies
+    DESTINATION "."
+    DIRECTORIES
+        "$<TARGET_FILE_DIR:assimp::assimp>"
+        "$<TARGET_FILE_DIR:SDL3::SDL3>"
+        ${ASSETBRIDGE_RUNTIME_SEARCH_DIRECTORIES}
+    PRE_EXCLUDE_REGEXES
+        "api-ms-.*"
+        "ext-ms-.*"
+        "msvcp140.*\\.dll"
+        "vcruntime140.*\\.dll"
+    POST_EXCLUDE_REGEXES
+        ".*[\\\\/]system32[\\\\/].*"
+)
+install(PROGRAMS ${ASSETBRIDGE_REQUIRED_MSVC_RUNTIME_LIBS} DESTINATION ".")
+install(FILES
+    "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE"
+    "${CMAKE_CURRENT_SOURCE_DIR}/THIRD_PARTY_NOTICES.md"
+    DESTINATION "."
+)
+install(
+    DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/third_party/licenses/"
+    DESTINATION "third_party/licenses"
+)
+
+if(CMAKE_BUILD_TYPE STREQUAL "Release")
+    add_test(
+        NAME assetbridge-package-contents
+        COMMAND "${CMAKE_COMMAND}"
+            "-DASSETBRIDGE_BUILD_DIR=${CMAKE_CURRENT_BINARY_DIR}"
+            "-DASSETBRIDGE_STAGING_DIR=${CMAKE_CURRENT_BINARY_DIR}/package-test-staging"
+            "-DASSETBRIDGE_EXPECTED_VERSION=${PROJECT_VERSION}"
+            "-DASSETBRIDGE_RUN_GUI_SMOKE=${ASSETBRIDGE_PACKAGE_GUI_SMOKE}"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/tests/verify_package.cmake"
+    )
+    set_tests_properties(assetbridge-package-contents PROPERTIES
+        LABELS "acceptance;package"
+        TIMEOUT 60
+    )
+endif()
+
+set(CPACK_GENERATOR "ZIP")
+set(CPACK_PACKAGE_NAME "AssetBridge")
+set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
+set(CPACK_PACKAGE_FILE_NAME "AssetBridge-v${PROJECT_VERSION}-win-x64")
+set(CPACK_PACKAGE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/packages")
+set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY ON)
+set(CPACK_PACKAGE_CHECKSUM "SHA256")
+include(CPack)
