@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -25,6 +26,17 @@ enum class ConversionErrorCode {
     report_write_failed,
     commit_failed
 };
+
+enum class ConversionStage {
+    preflight,
+    importing,
+    exporting,
+    reimporting,
+    validating,
+    committing
+};
+
+using ConversionProgressCallback = std::function<void(ConversionStage)>;
 
 [[nodiscard]] std::string_view to_string(ConversionErrorCode code) noexcept;
 
@@ -105,7 +117,8 @@ public:
     [[nodiscard]] ConversionReport convert(
         const std::filesystem::path& input,
         FormatId target,
-        const std::filesystem::path& output_root) const;
+        const std::filesystem::path& output_root,
+        const ConversionProgressCallback& progress = {}) const;
 };
 
 } // namespace assetbridge
