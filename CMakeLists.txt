@@ -13,10 +13,25 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 find_package(assimp CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 
+add_library(assetbridge-product STATIC
+    src/product/format_capabilities.cpp
+    src/product/loss_preflight.cpp
+)
+
+target_include_directories(assetbridge-product
+    PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+target_compile_options(assetbridge-product PRIVATE /W4 /permissive- /utf-8)
+
 add_library(assetbridge-core STATIC
     src/core/asset_inspector.cpp
+    src/core/preflight_report.cpp
+    src/core/preflight_serializer.cpp
     src/core/report_serializer.cpp
     src/core/runtime_capabilities.cpp
+    src/core/scene_analysis.cpp
 )
 
 target_include_directories(assetbridge-core
@@ -26,6 +41,7 @@ target_include_directories(assetbridge-core
 
 target_link_libraries(assetbridge-core
     PRIVATE
+        assetbridge-product
         assimp::assimp
         nlohmann_json::nlohmann_json
 )
@@ -55,8 +71,34 @@ add_executable(assetbridge-json-validator
 target_link_libraries(assetbridge-json-validator PRIVATE nlohmann_json::nlohmann_json)
 target_compile_options(assetbridge-json-validator PRIVATE /W4 /permissive- /utf-8)
 
+add_executable(assetbridge-capability-tests
+    tests/capability_matrix_tests.cpp
+)
+
+target_link_libraries(assetbridge-capability-tests PRIVATE assetbridge-product)
+target_compile_options(assetbridge-capability-tests PRIVATE /W4 /permissive- /utf-8)
+
+add_executable(assetbridge-scene-semantics-tests
+    tests/scene_semantics_tests.cpp
+)
+
+target_link_libraries(assetbridge-scene-semantics-tests
+    PRIVATE
+        assetbridge-core
+        assimp::assimp
+        nlohmann_json::nlohmann_json
+)
+target_compile_options(assetbridge-scene-semantics-tests PRIVATE /W4 /permissive- /utf-8)
+
 add_test(NAME assetbridge-core-inspector COMMAND assetbridge-tests)
 set_tests_properties(assetbridge-core-inspector PROPERTIES
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+)
+
+add_test(NAME assetbridge-capability-matrix COMMAND assetbridge-capability-tests)
+
+add_test(NAME assetbridge-scene-semantics COMMAND assetbridge-scene-semantics-tests)
+set_tests_properties(assetbridge-scene-semantics PROPERTIES
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
 )
 
@@ -141,4 +183,42 @@ add_assetbridge_cli_test(assetbridge-cli-capabilities-json
     "-DASSETBRIDGE_OPTION=--json"
     "-DASSETBRIDGE_EXPECTED_EXIT=0"
     "-DASSETBRIDGE_VALIDATE_JSON=capabilities"
+)
+
+add_assetbridge_cli_test(assetbridge-cli-preflight-stl-text
+    "-DASSETBRIDGE_COMMAND=preflight"
+    "-DASSETBRIDGE_INPUT=${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/minimal_triangle.obj"
+    "-DASSETBRIDGE_TARGET=stl"
+    "-DASSETBRIDGE_EXPECTED_EXIT=0"
+    "-DASSETBRIDGE_EXPECTED_STDOUT=Target Format: stl|has_node_hierarchy: false|normals_partial|uv0_unsupported|material_slots_unsupported|Compatibility Result: lossy|Overall Result: lossy"
+    "-DASSETBRIDGE_UNEXPECTED_STDOUT=node_hierarchy_unsupported"
+)
+
+add_assetbridge_cli_test(assetbridge-cli-preflight-stl-json
+    "-DASSETBRIDGE_COMMAND=preflight"
+    "-DASSETBRIDGE_INPUT=${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/minimal_triangle.obj"
+    "-DASSETBRIDGE_TARGET=STL"
+    "-DASSETBRIDGE_OPTION=--json"
+    "-DASSETBRIDGE_EXPECTED_EXIT=0"
+    "-DASSETBRIDGE_VALIDATE_JSON=preflight_stl"
+    "-DASSETBRIDGE_COMPARE_TEXT=TRUE"
+)
+
+add_assetbridge_cli_test(assetbridge-cli-preflight-unicode-glb-json
+    "-DASSETBRIDGE_COMMAND=preflight"
+    "-DASSETBRIDGE_INPUT=${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/中文三角形.obj"
+    "-DASSETBRIDGE_TARGET=glb"
+    "-DASSETBRIDGE_OPTION=--json"
+    "-DASSETBRIDGE_EXPECTED_EXIT=0"
+    "-DASSETBRIDGE_VALIDATE_JSON=preflight_glb"
+    "-DASSETBRIDGE_COMPARE_TEXT=TRUE"
+)
+
+add_assetbridge_cli_test(assetbridge-cli-preflight-unknown-json
+    "-DASSETBRIDGE_COMMAND=preflight"
+    "-DASSETBRIDGE_INPUT=${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/minimal_triangle.obj"
+    "-DASSETBRIDGE_TARGET=fbx"
+    "-DASSETBRIDGE_OPTION=--json"
+    "-DASSETBRIDGE_EXPECTED_EXIT=2"
+    "-DASSETBRIDGE_VALIDATE_JSON=preflight_unknown"
 )

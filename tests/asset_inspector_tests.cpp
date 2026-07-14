@@ -83,6 +83,21 @@ int main() {
         failures += require(summary.material_count >= 1, "material count should be at least 1");
         failures += require(summary.uv_channel_count == 1, "UV channel count should be 1");
         failures += require(summary.has_normals, "mesh should have normals");
+        failures += require(ascii_result.features.has_value(), "successful inspection should include AssetFeatures");
+        if (ascii_result.features.has_value()) {
+            const auto& features = *ascii_result.features;
+            failures += require(features.mesh_count == 1, "feature mesh count should be 1");
+            failures += require(
+                !features.has_node_hierarchy,
+                "minimal OBJ should not report Assimp's flat wrapper as meaningful hierarchy");
+            failures += require(features.meshes_with_normals == 1, "one mesh should have normals");
+            failures += require(features.meshes_with_tangents == 0, "OBJ should not invent tangents");
+            failures += require(features.max_uv_channel_count == 1, "maximum UV channel count should be 1");
+            failures += require(features.referenced_material_count == 1, "one material should be referenced by a mesh");
+            failures += require(features.bone_count == 0, "OBJ should not invent bones");
+            failures += require(features.animations.empty(), "OBJ should not invent animations");
+            failures += require(features.morph_target_names.empty(), "OBJ should not invent morph targets");
+        }
     } else {
         std::cerr << "ASCII import error: " << ascii_result.error_message << '\n';
     }
@@ -116,6 +131,7 @@ int main() {
         missing_result.error_code == assetbridge::InspectionErrorCode::file_not_found,
         "missing file should return file_not_found");
     failures += require(!missing_result.summary.has_value(), "missing file should not return a summary");
+    failures += require(!missing_result.features.has_value(), "missing file should not return AssetFeatures");
     failures += require(!missing_result.error_message.empty(), "missing file should return an error message");
 
     const auto invalid_result = inspector.inspect(invalid_obj_path);
