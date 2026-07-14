@@ -13,6 +13,9 @@ endif()
 if(DEFINED ASSETBRIDGE_INPUT)
     list(APPEND assetbridge_arguments "${ASSETBRIDGE_INPUT}")
 endif()
+if(DEFINED ASSETBRIDGE_OPTION)
+    list(APPEND assetbridge_arguments "${ASSETBRIDGE_OPTION}")
+endif()
 
 execute_process(
     COMMAND "${ASSETBRIDGE_CLI}" ${assetbridge_arguments}
@@ -23,7 +26,7 @@ execute_process(
 )
 
 message(STATUS "CLI exit code: ${actual_exit}")
-if(NOT actual_stdout STREQUAL "")
+if(NOT actual_stdout STREQUAL "" AND NOT DEFINED ASSETBRIDGE_VALIDATE_JSON)
     message(STATUS "CLI stdout:\n${actual_stdout}")
 endif()
 if(NOT actual_stderr STREQUAL "")
@@ -70,3 +73,36 @@ endfunction()
 require_all_fragments("${actual_stdout}" "${ASSETBRIDGE_EXPECTED_STDOUT}")
 require_all_fragments("${actual_stderr}" "${ASSETBRIDGE_EXPECTED_STDERR}")
 require_any_fragment("${actual_stderr}" "${ASSETBRIDGE_EXPECTED_STDERR_ANY}")
+
+if(DEFINED ASSETBRIDGE_VALIDATE_JSON)
+    if(NOT DEFINED ASSETBRIDGE_JSON_VALIDATOR OR NOT DEFINED ASSETBRIDGE_JSON_OUTPUT)
+        message(FATAL_ERROR "JSON validation requires a validator and output path")
+    endif()
+    if(NOT actual_stderr STREQUAL "")
+        message(FATAL_ERROR "JSON mode wrote unexpected stderr: ${actual_stderr}")
+    endif()
+
+    file(WRITE "${ASSETBRIDGE_JSON_OUTPUT}" "${actual_stdout}")
+    set(validator_arguments
+        "${ASSETBRIDGE_VALIDATE_JSON}"
+        "${ASSETBRIDGE_JSON_OUTPUT}"
+    )
+    if(DEFINED ASSETBRIDGE_INPUT)
+        list(APPEND validator_arguments "${ASSETBRIDGE_INPUT}")
+    endif()
+
+    execute_process(
+        COMMAND "${ASSETBRIDGE_JSON_VALIDATOR}" ${validator_arguments}
+        RESULT_VARIABLE validator_exit
+        OUTPUT_VARIABLE validator_stdout
+        ERROR_VARIABLE validator_stderr
+        ENCODING UTF-8
+    )
+    if(NOT validator_stdout STREQUAL "")
+        message(STATUS "${validator_stdout}")
+    endif()
+    if(NOT "${validator_exit}" STREQUAL "0")
+        message(FATAL_ERROR
+            "JSON validator failed with exit ${validator_exit}: ${validator_stderr}")
+    endif()
+endif()
