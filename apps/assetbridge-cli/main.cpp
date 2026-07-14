@@ -5,6 +5,7 @@
 #include "assetbridge/core/preflight_serializer.hpp"
 #include "assetbridge/core/report_serializer.hpp"
 #include "assetbridge/core/runtime_capabilities.hpp"
+#include "assetbridge/version.hpp"
 
 #include <filesystem>
 #include <iostream>
@@ -58,6 +59,7 @@ std::string utf16_to_utf8(std::wstring_view value) {
 void print_usage() {
     std::cerr
         << "Usage:\n"
+        << "  assetbridge-cli --version\n"
         << "  assetbridge-cli inspect <file> [--json]\n"
         << "  assetbridge-cli capabilities [--json]\n"
         << "  assetbridge-cli preflight <file> --target <format> [--json]\n"
@@ -67,6 +69,11 @@ void print_usage() {
 } // namespace
 
 int wmain(int argc, wchar_t* argv[]) {
+    if (argc == 2 && std::wstring_view(argv[1]) == L"--version") {
+        std::cout << "AssetBridge " << assetbridge::version << '\n';
+        return 0;
+    }
+
     if (argc >= 2 && std::wstring_view(argv[1]) == L"inspect") {
         const bool json_output = argc == 4 && std::wstring_view(argv[3]) == L"--json";
         if (argc != 3 && !json_output) {
