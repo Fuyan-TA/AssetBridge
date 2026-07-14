@@ -18,16 +18,20 @@ void print_usage() {
 
 } // namespace
 
-int main(int argc, char* argv[]) {
-    if (argc != 3 || std::string_view(argv[1]) != "inspect") {
+int wmain(int argc, wchar_t* argv[]) {
+    if (argc != 3 || std::wstring_view(argv[1]) != L"inspect") {
         print_usage();
         return 2;
     }
 
     const assetbridge::AssetInspector inspector;
+    // wchar_t arguments from wmain are UTF-16 on Windows. Constructing the
+    // filesystem path directly preserves them without an ANSI code-page hop.
     const auto result = inspector.inspect(std::filesystem::path(argv[2]));
     if (!result) {
-        std::cerr << "Error: " << result.error_message << '\n';
+        std::cerr
+            << "Error [" << assetbridge::to_string(result.error_code) << "]: "
+            << result.error_message << '\n';
         return 1;
     }
 

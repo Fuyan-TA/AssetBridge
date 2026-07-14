@@ -4,8 +4,18 @@
 #include <filesystem>
 #include <optional>
 #include <string>
+#include <string_view>
 
 namespace assetbridge {
+
+enum class InspectionErrorCode {
+    none,
+    file_not_found,
+    import_failed,
+    invalid_scene
+};
+
+[[nodiscard]] std::string_view to_string(InspectionErrorCode code) noexcept;
 
 struct AssetSummary {
     std::filesystem::path file_path;
@@ -19,11 +29,12 @@ struct AssetSummary {
 };
 
 struct InspectionResult {
-    std::optional<AssetSummary> summary;
+    InspectionErrorCode error_code = InspectionErrorCode::none;
     std::string error_message;
+    std::optional<AssetSummary> summary;
 
     [[nodiscard]] explicit operator bool() const noexcept {
-        return summary.has_value();
+        return error_code == InspectionErrorCode::none && summary.has_value();
     }
 };
 
