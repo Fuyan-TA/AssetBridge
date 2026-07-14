@@ -89,6 +89,8 @@ bool collect_node_bounds(
     const aiNode* node,
     const aiMatrix4x4& parent_transform,
     BoundsValue& bounds,
+    std::vector<BoundsValue>& mesh_bounds,
+    std::vector<unsigned int>& mesh_reference_counts,
     std::string& error) {
     if (node == nullptr || !finite(node->mTransformation)) {
         error = "Scene contains a missing or non-finite node transform.";
@@ -103,10 +105,12 @@ bool collect_node_bounds(
 
     for (unsigned int index = 0; index < node->mNumMeshes; ++index) {
         const unsigned int mesh_index = node->mMeshes[index];
-        if (mesh_index >= scene.mNumMeshes || scene.mMeshes[mesh_index] == nullptr) {
+        if (mesh_index >= scene.mNumMeshes || mesh_index >= mesh_bounds.size()
+            || scene.mMeshes[mesh_index] == nullptr) {
             error = "Node references an invalid mesh index.";
             return false;
         }
+        ++mesh_reference_counts[mesh_index];
         const aiMesh& mesh = *scene.mMeshes[mesh_index];
         for (unsigned int vertex_index = 0; vertex_index < mesh.mNumVertices; ++vertex_index) {
             const aiVector3D transformed = transform_point(world_transform, mesh.mVertices[vertex_index]);
@@ -115,24 +119,28 @@ bool collect_node_bounds(
                 return false;
             }
             extend_bounds(bounds, transformed);
+            extend_bounds(mesh_bounds[mesh_index], transformed);
         }
     }
 
     for (unsigned int index = 0; index < node->mNumChildren; ++index) {
-        if (!collect_node_bounds(scene, node->mChildren[index], world_transform, bounds, error)) {
+        if (!collect_node_bounds(
+                scene,
+                node->mChildren[index],
+                world_transform,
+                bounds,
+                mesh_bounds,
+                mesh_reference_counts,
+                error)) {
             return false;
         }
     }
     return true;
 }
 
-std::optional<ColorValue> referenced_diffuse_color(
+std::optional<ColorValue> material_diffuse_color(
     const aiScene& scene,
-    const std::set<unsigned int>& referenced_materials) {
-    if (referenced_materials.empty()) {
-        return std::nullopt;
-    }
-    const unsigned int index = *referenced_materials.begin();
+    unsigned int index) {
     if (index >= scene.mNumMaterials || scene.mMaterials[index] == nullptr) {
         return std::nullopt;
     }
@@ -149,6 +157,27 @@ std::optional<ColorValue> referenced_diffuse_color(
     return ColorValue { color.r, color.g, color.b, color.a };
 }
 
+std::optional<ColorValue> referenced_diffuse_color(
+    const aiScene& scene,
+    const std::set<unsigned int>& referenced_materials) {
+    return referenced_materials.empty()
+        ? std::nullopt
+        : material_diffuse_color(scene, *referenced_materials.begin());
+}
+
+void finalize_bounds(BoundsValue& bounds) {
+    bounds.center = {
+        (bounds.minimum.x + bounds.maximum.x) * 0.5,
+        (bounds.minimum.y + bounds.maximum.y) * 0.5,
+        (bounds.minimum.z + bounds.maximum.z) * 0.5
+    };
+    bounds.size = {
+        bounds.maximum.x - bounds.minimum.x,
+        bounds.maximum.y - bounds.minimum.y,
+        bounds.maximum.z - bounds.minimum.z
+    };
+}
+
 SceneAnalysisResult analyze_scene_for_conversion(const aiScene* scene) {
     SceneAnalysisResult result;
     if (scene == nullptr || scene->mRootNode == nullptr || scene->mMeshes == nullptr
@@ -159,6 +188,7 @@ SceneAnalysisResult analyze_scene_for_conversion(const aiScene* scene) {
 
     std::set<unsigned int> referenced_materials;
     result.analysis.mesh_count = scene->mNumMeshes;
+    result.analysis.meshes.resize(scene->mNumMeshes);
     for (unsigned int mesh_index = 0; mesh_index < scene->mNumMeshes; ++mesh_index) {
         const aiMesh* mesh = scene->mMeshes[mesh_index];
         if (mesh == nullptr || mesh->mNumVertices == 0 || mesh->mVertices == nullptr
@@ -166,6 +196,11 @@ SceneAnalysisResult analyze_scene_for_conversion(const aiScene* scene) {
             result.error = "Scene contains an empty or missing mesh.";
             return result;
         }
+        auto& mesh_analysis = result.analysis.meshes[mesh_index];
+        mesh_analysis.name.assign(mesh->mName.C_Str(), mesh->mName.length);
+        mesh_analysis.vertex_count = mesh->mNumVertices;
+        mesh_analysis.has_normals = mesh->HasNormals();
+        mesh_analysis.has_uv0 = mesh->HasTextureCoords(0);
         result.analysis.vertex_count += mesh->mNumVertices;
         result.analysis.has_normals = result.analysis.has_normals || mesh->HasNormals();
         result.analysis.has_uv0 = result.analysis.has_uv0 || mesh->HasTextureCoords(0);
@@ -198,6 +233,7 @@ SceneAnalysisResult analyze_scene_for_conversion(const aiScene* scene) {
                 }
             }
             ++result.analysis.triangle_count;
+            ++mesh_analysis.triangle_count;
         }
 
         if (mesh->mMaterialIndex >= scene->mNumMaterials || scene->mMaterials == nullptr
@@ -206,28 +242,37 @@ SceneAnalysisResult analyze_scene_for_conversion(const aiScene* scene) {
             return result;
         }
         referenced_materials.insert(mesh->mMaterialIndex);
+        mesh_analysis.diffuse_color = material_diffuse_color(*scene, mesh->mMaterialIndex);
     }
 
     aiMatrix4x4 identity;
-    if (!collect_node_bounds(*scene, scene->mRootNode, identity, result.analysis.bounds, result.error)
+    std::vector<BoundsValue> mesh_bounds(scene->mNumMeshes);
+    std::vector<unsigned int> mesh_reference_counts(scene->mNumMeshes, 0);
+    if (!collect_node_bounds(
+            *scene,
+            scene->mRootNode,
+            identity,
+            result.analysis.bounds,
+            mesh_bounds,
+            mesh_reference_counts,
+            result.error)
         || !result.analysis.bounds.valid) {
         if (result.error.empty()) {
             result.error = "Could not calculate scene bounds.";
         }
         return result;
     }
-
-    auto& bounds = result.analysis.bounds;
-    bounds.center = {
-        (bounds.minimum.x + bounds.maximum.x) * 0.5,
-        (bounds.minimum.y + bounds.maximum.y) * 0.5,
-        (bounds.minimum.z + bounds.maximum.z) * 0.5
-    };
-    bounds.size = {
-        bounds.maximum.x - bounds.minimum.x,
-        bounds.maximum.y - bounds.minimum.y,
-        bounds.maximum.z - bounds.minimum.z
-    };
+    for (std::size_t index = 0; index < mesh_bounds.size(); ++index) {
+        if (mesh_reference_counts[index] != 1 || !mesh_bounds[index].valid) {
+            result.error = mesh_reference_counts[index] > 1
+                ? "Scene contains mesh instancing, which is outside the verified route."
+                : "Every non-empty mesh must be referenced by exactly one node.";
+            return result;
+        }
+        finalize_bounds(mesh_bounds[index]);
+        result.analysis.meshes[index].bounds = mesh_bounds[index];
+    }
+    finalize_bounds(result.analysis.bounds);
     result.analysis.referenced_material_count = referenced_materials.size();
     result.analysis.diffuse_color = referenced_diffuse_color(*scene, referenced_materials);
     result.valid = true;
@@ -243,6 +288,20 @@ bool vector_nearly_equal(const Vector3Value& left, const Vector3Value& right) {
     return nearly_equal(left.x, right.x, 1.0e-5, 1.0e-5)
         && nearly_equal(left.y, right.y, 1.0e-5, 1.0e-5)
         && nearly_equal(left.z, right.z, 1.0e-5, 1.0e-5);
+}
+
+bool color_nearly_equal(
+    const std::optional<ColorValue>& source,
+    const std::optional<ColorValue>& output) {
+    if (!source.has_value()) {
+        return true;
+    }
+    if (!output.has_value()) {
+        return false;
+    }
+    return nearly_equal(source->red, output->red, 1.0e-4, 1.0e-4)
+        && nearly_equal(source->green, output->green, 1.0e-4, 1.0e-4)
+        && nearly_equal(source->blue, output->blue, 1.0e-4, 1.0e-4);
 }
 
 std::vector<ValidationCheck> validate_round_trip(
@@ -263,11 +322,27 @@ std::vector<ValidationCheck> validate_round_trip(
         true,
         "Every output mesh, triangle index, material reference, vertex, normal, UV, and transform is valid."
     });
+    const bool mesh_count_matches = source.mesh_count > 0
+        && source.mesh_count == output.mesh_count
+        && source.meshes.size() == source.mesh_count
+        && output.meshes.size() == output.mesh_count;
+    checks.push_back({
+        "mesh_count",
+        mesh_count_matches,
+        "Export-ready source meshes=" + std::to_string(source.mesh_count)
+            + ", output meshes=" + std::to_string(output.mesh_count)
+            + "; independent meshes must not be merged."
+    });
     checks.push_back({
         "triangle_count",
         source.triangle_count == output.triangle_count,
         "Source triangles=" + std::to_string(source.triangle_count)
             + ", output triangles=" + std::to_string(output.triangle_count) + "."
+    });
+    checks.push_back({
+        "all_faces_triangles",
+        true,
+        "The export-ready source and reimported GLB contain only valid three-index faces."
     });
     checks.push_back({
         "aabb_center",
@@ -279,33 +354,81 @@ std::vector<ValidationCheck> validate_round_trip(
         vector_nearly_equal(source.bounds.size, output.bounds.size),
         "AABB sizes are compared with absolute and relative tolerance 1e-5."
     });
+    const auto matching = match_conversion_meshes(source.meshes, output.meshes);
+    checks.push_back({ "mesh_matching_strategy", matching.complete, matching.details });
+
+    bool per_mesh_triangles = matching.complete;
+    bool per_mesh_bounds = matching.complete;
+    bool per_mesh_normals = matching.complete;
+    bool per_mesh_uv0 = matching.complete;
+    bool per_mesh_material = matching.complete;
+    for (const auto& match : matching.matches) {
+        if (match.source_index >= source.meshes.size()
+            || match.output_index >= output.meshes.size()) {
+            per_mesh_triangles = false;
+            per_mesh_bounds = false;
+            per_mesh_normals = false;
+            per_mesh_uv0 = false;
+            per_mesh_material = false;
+            continue;
+        }
+        const auto& before = source.meshes[match.source_index];
+        const auto& after = output.meshes[match.output_index];
+        per_mesh_triangles = per_mesh_triangles
+            && before.triangle_count == after.triangle_count;
+        per_mesh_bounds = per_mesh_bounds
+            && vector_nearly_equal(before.bounds.center, after.bounds.center)
+            && vector_nearly_equal(before.bounds.size, after.bounds.size);
+        per_mesh_normals = per_mesh_normals && before.has_normals == after.has_normals;
+        per_mesh_uv0 = per_mesh_uv0 && before.has_uv0 == after.has_uv0;
+        per_mesh_material = per_mesh_material
+            && color_nearly_equal(before.diffuse_color, after.diffuse_color);
+    }
+    checks.push_back({
+        "per_mesh_triangle_count",
+        per_mesh_triangles,
+        "Each matched mesh preserves its export-ready triangle count."
+    });
+    checks.push_back({
+        "per_mesh_aabb",
+        per_mesh_bounds,
+        "Each matched mesh preserves its world-space AABB with tolerance 1e-5."
+    });
+    checks.push_back({
+        "per_mesh_normals",
+        per_mesh_normals,
+        "Each matched mesh preserves normal-channel existence."
+    });
+    checks.push_back({
+        "per_mesh_uv0",
+        per_mesh_uv0,
+        "Each matched mesh preserves UV0-channel existence."
+    });
+    checks.push_back({
+        "per_mesh_material",
+        per_mesh_material,
+        "Each matched mesh preserves the currently verified diffuse material color."
+    });
     checks.push_back({
         "normals_preserved",
-        !source.has_normals || output.has_normals,
-        source.has_normals ? "Source normals must exist after reimport." : "Source has no normals."
+        per_mesh_normals,
+        "Normal existence is validated per matched mesh."
     });
     checks.push_back({
         "uv0_preserved",
-        !source.has_uv0 || output.has_uv0,
-        source.has_uv0 ? "Source UV0 must exist after reimport." : "Source has no UV0."
+        per_mesh_uv0,
+        "UV0 existence is validated per matched mesh."
     });
     checks.push_back({
         "referenced_material_present",
-        output.referenced_material_count > 0,
-        "At least one valid referenced output material must exist."
+        output.referenced_material_count > 0
+            && output.referenced_material_count == source.referenced_material_count,
+        "The output must preserve the verified referenced-material count."
     });
 
-    bool color_matches = !source.diffuse_color.has_value();
-    if (source.diffuse_color.has_value() && output.diffuse_color.has_value()) {
-        const auto& before = *source.diffuse_color;
-        const auto& after = *output.diffuse_color;
-        color_matches = nearly_equal(before.red, after.red, 1.0e-4, 1.0e-4)
-            && nearly_equal(before.green, after.green, 1.0e-4, 1.0e-4)
-            && nearly_equal(before.blue, after.blue, 1.0e-4, 1.0e-4);
-    }
     checks.push_back({
         "diffuse_color",
-        color_matches,
+        color_nearly_equal(source.diffuse_color, output.diffuse_color),
         source.diffuse_color.has_value()
             ? "MTL diffuse RGB is compared after mapping with tolerance 1e-4."
             : "Source material has no diffuse color to compare."
@@ -405,6 +528,68 @@ void set_error(
 
 } // namespace
 
+MeshMatchingResult match_conversion_meshes(
+    const std::vector<ConversionMeshAnalysis>& source,
+    const std::vector<ConversionMeshAnalysis>& output) {
+    MeshMatchingResult result;
+    if (source.size() != output.size()) {
+        result.details = "Cannot match meshes one-to-one: source count="
+            + std::to_string(source.size()) + ", output count="
+            + std::to_string(output.size()) + ".";
+        return result;
+    }
+
+    std::vector<bool> output_used(output.size(), false);
+    std::size_t name_matches = 0;
+    for (std::size_t source_index = 0; source_index < source.size(); ++source_index) {
+        const auto& source_mesh = source[source_index];
+        std::vector<std::size_t> candidates;
+        for (std::size_t output_index = 0; output_index < output.size(); ++output_index) {
+            if (output_used[output_index]) {
+                continue;
+            }
+            const auto& output_mesh = output[output_index];
+            if (source_mesh.bounds.valid && output_mesh.bounds.valid
+                && source_mesh.triangle_count == output_mesh.triangle_count
+                && vector_nearly_equal(source_mesh.bounds.center, output_mesh.bounds.center)
+                && vector_nearly_equal(source_mesh.bounds.size, output_mesh.bounds.size)) {
+                candidates.push_back(output_index);
+            }
+        }
+        if (candidates.empty()) {
+            result.details = "No unmatched output mesh has the same triangle count and AABB as source mesh "
+                + std::to_string(source_index) + ".";
+            return result;
+        }
+
+        auto selected = candidates.front();
+        std::string method = "geometry_signature_then_lowest_unmatched_output_ordinal";
+        if (!source_mesh.name.empty()) {
+            const auto name_match = std::find_if(
+                candidates.begin(),
+                candidates.end(),
+                [&source_mesh, &output](std::size_t output_index) {
+                    return output[output_index].name == source_mesh.name;
+                });
+            if (name_match != candidates.end()) {
+                selected = *name_match;
+                method = "exact_nonempty_name_and_geometry_signature";
+                ++name_matches;
+            }
+        }
+        output_used[selected] = true;
+        result.matches.push_back({ source_index, selected, std::move(method) });
+    }
+
+    result.complete = result.matches.size() == source.size();
+    result.details = "Matched " + std::to_string(result.matches.size())
+        + " meshes one-to-one by triangle count and AABB; exact non-empty names were preferred for "
+        + std::to_string(name_matches)
+        + " matches, with the lowest unmatched output ordinal as the stable tie-break for duplicate or empty names."
+        + " Vertex counts are diagnostic only.";
+    return result;
+}
+
 std::string_view to_string(ConversionErrorCode code) noexcept {
     switch (code) {
     case ConversionErrorCode::none: return "none";
@@ -442,7 +627,7 @@ ConversionReport AssetConverter::convert(
         set_error(
             report,
             ConversionErrorCode::unsupported_source_format,
-            "Phase 2 accepts OBJ input only.",
+            "The verified conversion product accepts OBJ input only.",
             total_start);
         return report;
     }
@@ -485,15 +670,22 @@ ConversionReport AssetConverter::convert(
             total_start);
         return report;
     }
-    if (!inspection.summary.has_value()
-        || inspection.summary->face_count != inspection.summary->triangle_count) {
+    if (!inspection.summary.has_value()) {
         set_error(
             report,
-            ConversionErrorCode::route_feature_unverified,
-            "The Phase 2 route is verified only for source geometry that is already triangulated.",
+            ConversionErrorCode::import_failed,
+            "The inspected OBJ did not provide source geometry diagnostics.",
             total_start);
         return report;
     }
+    report.triangulation = TriangulationDiagnostics {
+        inspection.summary->face_count,
+        inspection.summary->triangle_count,
+        inspection.summary->face_count >= inspection.summary->triangle_count
+            ? inspection.summary->face_count - inspection.summary->triangle_count
+            : 0,
+        0
+    };
 
     const auto stem = input.filename().stem();
     if (stem.empty() || stem == "." || stem == ".." || stem.has_parent_path()) {
@@ -580,6 +772,15 @@ ConversionReport AssetConverter::convert(
         return report;
     }
     report.source_analysis = source_analysis.analysis;
+    report.triangulation->export_ready_triangle_count = source_analysis.analysis.triangle_count;
+    if (source_analysis.analysis.mesh_count != inspection.summary->mesh_count) {
+        set_error(
+            report,
+            ConversionErrorCode::validation_failed,
+            "Export preparation changed the number of non-empty meshes.",
+            total_start);
+        return report;
+    }
 
     if (progress) progress(ConversionStage::exporting);
     const auto export_start = Clock::now();

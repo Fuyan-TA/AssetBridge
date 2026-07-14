@@ -30,6 +30,7 @@ std::vector<ConversionRoute> make_registry() {
                 verified_obj_to_glb
                     ? std::vector<AssetFeature> {
                         AssetFeature::mesh,
+                        AssetFeature::multiple_meshes,
                         AssetFeature::normals,
                         AssetFeature::uv0,
                         AssetFeature::material_slots

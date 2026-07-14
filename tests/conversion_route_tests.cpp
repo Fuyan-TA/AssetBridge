@@ -44,7 +44,7 @@ int main() {
             ++enabled_count;
             failures += require(
                 route.source == FormatId::obj && route.target == FormatId::glb2,
-                "only OBJ to GLB2 may be enabled and verified in Phase 2");
+                "only OBJ to GLB2 may be enabled and verified in Phase 4");
             failures += require(
                 route.product_enabled && route.verified,
                 "enabled OBJ to GLB2 route must also be verified");
@@ -57,13 +57,14 @@ int main() {
     failures += require(obj_to_glb.verified, "OBJ to GLB2 should be verified");
     failures += require(
         route_feature_verified(obj_to_glb, AssetFeature::mesh)
+            && route_feature_verified(obj_to_glb, AssetFeature::multiple_meshes)
             && route_feature_verified(obj_to_glb, AssetFeature::normals)
             && route_feature_verified(obj_to_glb, AssetFeature::uv0)
             && route_feature_verified(obj_to_glb, AssetFeature::material_slots),
         "OBJ to GLB2 verified feature set is incomplete");
     failures += require(
         !route_feature_verified(obj_to_glb, AssetFeature::external_textures)
-            && !route_feature_verified(obj_to_glb, AssetFeature::multiple_meshes)
+            && !route_feature_verified(obj_to_glb, AssetFeature::node_hierarchy)
             && !route_feature_verified(obj_to_glb, AssetFeature::animations),
         "unverified route features must stay outside the verified feature set");
 
@@ -94,7 +95,7 @@ int main() {
         true);
     failures += require(
         textured.overall_result == OverallResult::blocked,
-        "external texture should block the Phase 2 route");
+        "external texture should remain blocked for the Phase 4 route");
     failures += require(
         has_route_feature_block(textured, AssetFeature::external_textures),
         "external texture block should use route_feature_unverified");
@@ -107,8 +108,21 @@ int main() {
         multi_mesh_features,
         true);
     failures += require(
-        has_route_feature_block(multi_mesh, AssetFeature::multiple_meshes),
-        "multiple meshes should be blocked as an unverified route feature");
+        multi_mesh.overall_result == OverallResult::safe
+            && !has_route_feature_block(multi_mesh, AssetFeature::multiple_meshes),
+        "flat identity sibling meshes should be safe on the verified route");
+
+    auto hierarchy_features = multi_mesh_features;
+    hierarchy_features.has_node_hierarchy = true;
+    const auto hierarchy = evaluate_route_preflight(
+        FormatId::obj,
+        FormatId::glb2,
+        hierarchy_features,
+        true);
+    failures += require(
+        hierarchy.overall_result == OverallResult::blocked
+            && has_route_feature_block(hierarchy, AssetFeature::node_hierarchy),
+        "meaningful hierarchy must remain independently blocked");
 
     const auto& obj_to_stl = conversion_route(FormatId::obj, FormatId::stl);
     failures += require(

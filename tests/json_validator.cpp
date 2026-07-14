@@ -1,5 +1,6 @@
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <filesystem>
 #include <fstream>
 #include <initializer_list>
@@ -181,7 +182,9 @@ std::string read_text_file(const std::filesystem::path& path) {
     };
 }
 
-void validate_preflight_features(const Json& features) {
+void validate_preflight_features(
+    const Json& features,
+    std::uint64_t expected_mesh_count) {
     require_exact_keys(features, {
         "mesh_count",
         "has_node_hierarchy",
@@ -224,8 +227,10 @@ void validate_preflight_features(const Json& features) {
     require(features.at("external_texture_references").is_array(), "texture references must be an array");
     require(features.at("animations").is_array(), "animations must be an array");
     require(features.at("morph_target_names").is_array(), "morph names must be an array");
-    require(features.at("mesh_count") == 1, "preflight mesh_count mismatch");
-    require(features.at("meshes_with_normals") == 1, "preflight normal count mismatch");
+    require(features.at("mesh_count") == expected_mesh_count, "preflight mesh_count mismatch");
+    require(
+        features.at("meshes_with_normals") == expected_mesh_count,
+        "preflight normal count mismatch");
     require(features.at("max_uv_channel_count") == 1, "preflight UV count mismatch");
     require(features.at("referenced_material_count") == 1, "referenced material count mismatch");
     require(features.at("animation_count") == 0, "OBJ must not invent animations");
@@ -272,7 +277,8 @@ void validate_preflight_success(
     std::string_view expected_overall,
     bool expected_product_enabled,
     bool expected_verified,
-    const std::filesystem::path& text_path) {
+    const std::filesystem::path& text_path,
+    std::uint64_t expected_mesh_count = 1) {
     require_exact_keys(report, {
         "schema",
         "status",
@@ -329,7 +335,7 @@ void validate_preflight_success(
         "target route product_enabled mismatch");
     require(target.at("verified") == expected_verified, "target route verified mismatch");
 
-    validate_preflight_features(report.at("features"));
+    validate_preflight_features(report.at("features"), expected_mesh_count);
     validate_assessments(report.at("assessments"));
     const auto loss_codes = validate_losses(report.at("losses"));
 
@@ -411,7 +417,10 @@ std::filesystem::path path_from_utf8(std::string_view value) {
     return std::filesystem::path(std::u8string(begin, begin + value.size()));
 }
 
-void validate_conversion_analysis(const Json& analysis) {
+void validate_conversion_analysis(
+    const Json& analysis,
+    std::uint64_t expected_mesh_count,
+    std::uint64_t expected_triangle_count) {
     require_exact_keys(analysis, {
         "mesh_count",
         "vertex_count",
@@ -426,8 +435,12 @@ void validate_conversion_analysis(const Json& analysis) {
              "mesh_count", "vertex_count", "triangle_count", "referenced_material_count" }) {
         require(analysis.at(field).is_number_unsigned(), "conversion analysis count must be unsigned");
     }
-    require(analysis.at("mesh_count") == 1, "converted mesh count mismatch");
-    require(analysis.at("triangle_count") == 1, "converted triangle count mismatch");
+    require(
+        analysis.at("mesh_count") == expected_mesh_count,
+        "converted mesh count mismatch");
+    require(
+        analysis.at("triangle_count") == expected_triangle_count,
+        "converted triangle count mismatch");
     require(analysis.at("referenced_material_count") == 1, "referenced material count mismatch");
     require(analysis.at("has_normals") == true, "converted scene must contain normals");
     require(analysis.at("has_uv0") == true, "converted scene must contain UV0");
@@ -451,6 +464,43 @@ void validate_conversion_analysis(const Json& analysis) {
 }
 
 void validate_conversion_success(const Json& report, const std::filesystem::path& input) {
+    std::uint64_t expected_mesh_count = 1;
+    std::uint64_t expected_source_face_count = 1;
+    std::uint64_t expected_source_triangle_faces = 1;
+    std::uint64_t expected_export_ready_triangles = 1;
+    double expected_red = 0.8;
+    double expected_green = 0.8;
+    double expected_blue = 0.8;
+    if (input.filename() == "multi_two_triangles.obj") {
+        expected_mesh_count = 2;
+        expected_source_face_count = 2;
+        expected_source_triangle_faces = 2;
+        expected_export_ready_triangles = 2;
+        expected_red = 0.3;
+        expected_green = 0.6;
+        expected_blue = 0.9;
+    } else if (input.filename() == "multi_triangle_quad.obj") {
+        expected_mesh_count = 2;
+        expected_source_face_count = 2;
+        expected_source_triangle_faces = 1;
+        expected_export_ready_triangles = 3;
+        expected_red = 0.4;
+        expected_green = 0.7;
+        expected_blue = 0.2;
+    } else if (input.filename() == L"中文多网格.obj") {
+        expected_mesh_count = 2;
+        expected_source_face_count = 2;
+        expected_source_triangle_faces = 2;
+        expected_export_ready_triangles = 2;
+        expected_red = 0.2;
+        expected_green = 0.45;
+        expected_blue = 0.75;
+    } else if (input.filename() == L"中文三角形.obj") {
+        expected_red = 0.125;
+        expected_green = 0.5;
+        expected_blue = 0.875;
+    }
+
     require_exact_keys(report, {
         "schema",
         "status",
@@ -458,6 +508,7 @@ void validate_conversion_success(const Json& report, const std::filesystem::path
         "route",
         "output",
         "source_analysis",
+        "triangulation",
         "preflight",
         "processing_steps",
         "output_analysis",
@@ -509,8 +560,14 @@ void validate_conversion_success(const Json& report, const std::filesystem::path
         "generated GLB must exist and be non-empty");
     require(!report_path.empty(), "conversion-report.json was not reported");
 
-    validate_conversion_analysis(report.at("source_analysis"));
-    validate_conversion_analysis(report.at("output_analysis"));
+    validate_conversion_analysis(
+        report.at("source_analysis"),
+        expected_mesh_count,
+        expected_export_ready_triangles);
+    validate_conversion_analysis(
+        report.at("output_analysis"),
+        expected_mesh_count,
+        expected_export_ready_triangles);
     require(
         report.at("source_analysis").at("triangle_count")
             == report.at("output_analysis").at("triangle_count"),
@@ -523,16 +580,31 @@ void validate_conversion_success(const Json& report, const std::filesystem::path
                 - output_color.at(channel).get<double>()) < 1.0e-4,
             "MTL diffuse color did not survive conversion");
     }
-    const bool unicode_asset = input.filename() == L"中文三角形.obj";
-    const double expected_red = unicode_asset ? 0.125 : 0.8;
-    const double expected_green = unicode_asset ? 0.5 : 0.8;
-    const double expected_blue = unicode_asset ? 0.875 : 0.8;
     require(std::abs(source_color.at("red").get<double>() - expected_red) < 1.0e-4,
         "source MTL red channel was not resolved");
     require(std::abs(source_color.at("green").get<double>() - expected_green) < 1.0e-4,
         "source MTL green channel was not resolved");
     require(std::abs(source_color.at("blue").get<double>() - expected_blue) < 1.0e-4,
         "source MTL blue channel was not resolved");
+
+    const auto& triangulation = report.at("triangulation");
+    require_exact_keys(triangulation, {
+        "source_face_count",
+        "source_triangle_face_count",
+        "source_non_triangle_face_count",
+        "export_ready_triangle_count"
+    });
+    require(triangulation.at("source_face_count") == expected_source_face_count,
+        "source face diagnostic mismatch");
+    require(triangulation.at("source_triangle_face_count") == expected_source_triangle_faces,
+        "source triangle-face diagnostic mismatch");
+    require(
+        triangulation.at("source_non_triangle_face_count")
+            == expected_source_face_count - expected_source_triangle_faces,
+        "source non-triangle-face diagnostic mismatch");
+    require(
+        triangulation.at("export_ready_triangle_count") == expected_export_ready_triangles,
+        "export-ready triangle diagnostic mismatch");
 
     const auto& preflight = report.at("preflight");
     require(preflight.at("schema") == "assetbridge.preflight.v1", "embedded preflight schema mismatch");
@@ -565,7 +637,10 @@ void validate_conversion_success(const Json& report, const std::filesystem::path
     }
     for (const auto required : {
              "output_file_nonempty", "reimport_scene_valid", "mesh_indices_valid",
-             "triangle_count", "aabb_center", "aabb_size", "normals_preserved",
+             "mesh_count", "triangle_count", "all_faces_triangles",
+             "aabb_center", "aabb_size", "mesh_matching_strategy",
+             "per_mesh_triangle_count", "per_mesh_aabb", "per_mesh_normals",
+             "per_mesh_uv0", "per_mesh_material", "normals_preserved",
              "uv0_preserved", "referenced_material_present", "diffuse_color" }) {
         require(std::find(check_names.begin(), check_names.end(), required) != check_names.end(),
             "required validation check is missing");
@@ -655,6 +730,18 @@ int wmain(int argc, wchar_t* argv[]) {
                 true,
                 true,
                 std::filesystem::path(argv[4]));
+        } else if (mode == L"preflight_glb_multi") {
+            require(argc == 5, "preflight_glb_multi requires input and text files");
+            validate_preflight_success(
+                report,
+                std::filesystem::path(argv[3]),
+                "glb2",
+                "safe",
+                "safe",
+                true,
+                true,
+                std::filesystem::path(argv[4]),
+                2);
         } else if (mode == L"preflight_unknown") {
             require(argc == 4, "preflight_unknown requires the requested input file");
             validate_unknown_target(report);

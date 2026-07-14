@@ -3,6 +3,7 @@
 #include "assetbridge/core/preflight_report.hpp"
 
 #include <cstdint>
+#include <cstddef>
 #include <filesystem>
 #include <functional>
 #include <optional>
@@ -61,6 +62,16 @@ struct ColorValue {
     double alpha = 1.0;
 };
 
+struct ConversionMeshAnalysis {
+    std::string name;
+    std::uint64_t vertex_count = 0;
+    std::uint64_t triangle_count = 0;
+    bool has_normals = false;
+    bool has_uv0 = false;
+    BoundsValue bounds;
+    std::optional<ColorValue> diffuse_color;
+};
+
 struct ConversionSceneAnalysis {
     std::uint64_t mesh_count = 0;
     std::uint64_t vertex_count = 0;
@@ -70,6 +81,32 @@ struct ConversionSceneAnalysis {
     bool has_uv0 = false;
     BoundsValue bounds;
     std::optional<ColorValue> diffuse_color;
+    // Kept in scene mesh order for diagnostics only. Round-trip validation
+    // uses match_conversion_meshes and never assumes source/output order.
+    std::vector<ConversionMeshAnalysis> meshes;
+};
+
+struct MeshMatch {
+    std::size_t source_index = 0;
+    std::size_t output_index = 0;
+    std::string method;
+};
+
+struct MeshMatchingResult {
+    bool complete = false;
+    std::vector<MeshMatch> matches;
+    std::string details;
+};
+
+[[nodiscard]] MeshMatchingResult match_conversion_meshes(
+    const std::vector<ConversionMeshAnalysis>& source,
+    const std::vector<ConversionMeshAnalysis>& output);
+
+struct TriangulationDiagnostics {
+    std::uint64_t source_face_count = 0;
+    std::uint64_t source_triangle_face_count = 0;
+    std::uint64_t source_non_triangle_face_count = 0;
+    std::uint64_t export_ready_triangle_count = 0;
 };
 
 struct ValidationCheck {
@@ -96,6 +133,7 @@ struct ConversionReport {
     std::optional<std::filesystem::path> output_directory;
     std::vector<std::filesystem::path> output_files;
     std::optional<ConversionSceneAnalysis> source_analysis;
+    std::optional<TriangulationDiagnostics> triangulation;
     std::optional<PreflightReport> preflight;
     std::vector<std::string> processing_steps;
     std::optional<ConversionSceneAnalysis> output_analysis;
