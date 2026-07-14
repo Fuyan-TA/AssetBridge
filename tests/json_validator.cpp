@@ -216,6 +216,9 @@ void validate_preflight_features(const Json& features) {
         require(features.at(field).is_number_unsigned(), "feature count must be unsigned");
     }
     require(features.at("has_node_hierarchy").is_boolean(), "hierarchy flag must be boolean");
+    require(
+        features.at("has_node_hierarchy") == false,
+        "minimal OBJ must not report Assimp's flat wrapper as meaningful hierarchy");
     require(features.at("has_pbr_materials").is_boolean(), "PBR flag must be boolean");
     require(features.at("external_texture_references").is_array(), "texture references must be an array");
     require(features.at("animations").is_array(), "animations must be an array");
@@ -325,11 +328,20 @@ void validate_preflight_success(
     if (expected_target == "stl") {
         require(!loss_codes.empty(), "OBJ to STL must report losses");
         require(
+            std::find(loss_codes.begin(), loss_codes.end(), "normals_partial") != loss_codes.end(),
+            "OBJ to STL must report partial normal preservation");
+        require(
             std::find(loss_codes.begin(), loss_codes.end(), "uv0_unsupported") != loss_codes.end(),
             "OBJ to STL must report UV loss");
         require(
             std::find(loss_codes.begin(), loss_codes.end(), "material_slots_unsupported") != loss_codes.end(),
             "OBJ to STL must report material loss");
+        require(
+            std::find(
+                loss_codes.begin(),
+                loss_codes.end(),
+                "node_hierarchy_unsupported") == loss_codes.end(),
+            "minimal OBJ must not report a hierarchy loss");
     } else if (expected_target == "glb2") {
         require(loss_codes.empty(), "OBJ to GLB must not invent a known loss");
     }
@@ -347,6 +359,9 @@ void validate_preflight_success(
     for (const auto& code : loss_codes) {
         require(text.find(code) != std::string::npos, "text output is missing a JSON loss code");
     }
+    require(
+        text.find("node_hierarchy_unsupported") == std::string::npos,
+        "text output must not report a hierarchy loss for minimal OBJ");
 }
 
 void validate_unknown_target(const Json& report) {

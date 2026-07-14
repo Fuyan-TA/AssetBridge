@@ -19,9 +19,15 @@ nlohmann::json features_to_json(const AssetFeatures& features) {
     for (const auto& animation : features.animations) {
         animations.push_back({
             { "name", animation.name },
-            { "duration_seconds", animation.duration_seconds },
-            { "duration_ticks", animation.duration_ticks },
-            { "ticks_per_second", animation.ticks_per_second }
+            { "duration_seconds", animation.duration_seconds.has_value()
+                ? nlohmann::json(*animation.duration_seconds)
+                : nlohmann::json(nullptr) },
+            { "duration_ticks", animation.duration_ticks.has_value()
+                ? nlohmann::json(*animation.duration_ticks)
+                : nlohmann::json(nullptr) },
+            { "ticks_per_second", animation.ticks_per_second.has_value()
+                ? nlohmann::json(*animation.ticks_per_second)
+                : nlohmann::json(nullptr) }
         });
     }
 
@@ -123,6 +129,28 @@ std::string preflight_to_text(const PreflightReport& report) {
             << "- max_weights_per_vertex: " << features.max_weights_per_vertex << '\n'
             << "- animation_count: " << features.animations.size() << '\n'
             << "- morph_target_count: " << features.morph_target_names.size() << '\n';
+
+        for (const auto& animation : features.animations) {
+            output << "  animation: " << animation.name << " | duration_seconds=";
+            if (animation.duration_seconds.has_value()) {
+                output << *animation.duration_seconds;
+            } else {
+                output << "unknown";
+            }
+            output << " | duration_ticks=";
+            if (animation.duration_ticks.has_value()) {
+                output << *animation.duration_ticks;
+            } else {
+                output << "unknown";
+            }
+            output << " | ticks_per_second=";
+            if (animation.ticks_per_second.has_value()) {
+                output << *animation.ticks_per_second;
+            } else {
+                output << "unknown";
+            }
+            output << '\n';
+        }
     }
 
     output << "Capability Assessments:\n";

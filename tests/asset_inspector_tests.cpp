@@ -87,6 +87,9 @@ int main() {
         if (ascii_result.features.has_value()) {
             const auto& features = *ascii_result.features;
             failures += require(features.mesh_count == 1, "feature mesh count should be 1");
+            failures += require(
+                !features.has_node_hierarchy,
+                "minimal OBJ should not report Assimp's flat wrapper as meaningful hierarchy");
             failures += require(features.meshes_with_normals == 1, "one mesh should have normals");
             failures += require(features.meshes_with_tangents == 0, "OBJ should not invent tangents");
             failures += require(features.max_uv_channel_count == 1, "maximum UV channel count should be 1");

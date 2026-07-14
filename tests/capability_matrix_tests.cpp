@@ -2,7 +2,9 @@
 #include "assetbridge/product/loss_preflight.hpp"
 
 #include <array>
+#include <cmath>
 #include <iostream>
+#include <limits>
 #include <set>
 #include <string_view>
 
@@ -39,6 +41,34 @@ int main() {
     failures += require(parse_format_id("GlB") == FormatId::glb2, "GLB should canonicalize to glb2");
     failures += require(parse_format_id("glb2") == FormatId::glb2, "glb2 should parse");
     failures += require(!parse_format_id("fbx").has_value(), "unknown format should not parse");
+
+    const auto known_duration = animation_duration_seconds(120.0, 24.0);
+    failures += require(
+        known_duration.has_value() && std::fabs(*known_duration - 5.0) < 0.000001,
+        "finite positive tick rate should produce duration seconds");
+    const auto zero_tick_rate = animation_duration_seconds(120.0, 0.0);
+    failures += require(
+        !zero_tick_rate.has_value(),
+        "zero tick rate must produce unknown duration seconds");
+    AnimationFeature zero_tick_animation {
+        "ZeroTickRate",
+        zero_tick_rate,
+        120.0,
+        0.0
+    };
+    failures += require(
+        !zero_tick_animation.duration_seconds.has_value()
+            && zero_tick_animation.duration_ticks == 120.0
+            && zero_tick_animation.ticks_per_second == 0.0,
+        "zero tick rate should retain finite tick data without inventing seconds");
+    failures += require(
+        !animation_duration_seconds(
+            std::numeric_limits<double>::infinity(),
+            24.0).has_value()
+        && !animation_duration_seconds(
+            120.0,
+            std::numeric_limits<double>::quiet_NaN()).has_value(),
+        "non-finite animation inputs must not produce NaN or infinity seconds");
 
     constexpr std::array all_features {
         AssetFeature::mesh,
@@ -81,7 +111,7 @@ int main() {
 
     AssetFeatures animation_features;
     animation_features.mesh_count = 1;
-    animation_features.animations.push_back({ "SyntheticAnimation", 1.0 });
+    animation_features.animations.push_back({ "SyntheticAnimation", 1.0, 24.0, 24.0 });
     const auto animation_to_obj = evaluate_preflight(
         FormatId::obj,
         animation_features,
@@ -140,6 +170,17 @@ int main() {
         obj_to_stl.compatibility_result == CompatibilityResult::lossy
             && obj_to_stl.overall_result == OverallResult::lossy,
         "lossy must outrank unverified");
+
+    AssetFeatures meaningful_hierarchy_features;
+    meaningful_hierarchy_features.mesh_count = 1;
+    meaningful_hierarchy_features.has_node_hierarchy = true;
+    const auto hierarchy_to_stl = evaluate_preflight(
+        FormatId::stl,
+        meaningful_hierarchy_features,
+        true);
+    failures += require(
+        find_loss(hierarchy_to_stl, AssetFeature::node_hierarchy) != nullptr,
+        "meaningful hierarchy to STL should report node hierarchy loss");
 
     const auto obj_to_glb = evaluate_preflight(FormatId::glb2, static_obj_features, true);
     failures += require(

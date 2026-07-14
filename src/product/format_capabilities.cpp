@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <stdexcept>
 #include <string>
 
@@ -188,6 +189,22 @@ std::string_view to_string(LossSeverity severity) noexcept {
     case LossSeverity::blocking: return "blocking";
     }
     return "unknown";
+}
+
+std::optional<double> animation_duration_seconds(
+    double duration_ticks,
+    double ticks_per_second) noexcept {
+    if (!std::isfinite(duration_ticks)
+        || !std::isfinite(ticks_per_second)
+        || duration_ticks < 0.0
+        || ticks_per_second <= 0.0) {
+        return std::nullopt;
+    }
+
+    const double seconds = duration_ticks / ticks_per_second;
+    return std::isfinite(seconds)
+        ? std::optional<double>(seconds)
+        : std::nullopt;
 }
 
 const std::array<FormatCapability, 5>& capability_matrix() {

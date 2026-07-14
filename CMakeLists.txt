@@ -31,6 +31,7 @@ add_library(assetbridge-core STATIC
     src/core/preflight_serializer.cpp
     src/core/report_serializer.cpp
     src/core/runtime_capabilities.cpp
+    src/core/scene_analysis.cpp
 )
 
 target_include_directories(assetbridge-core
@@ -77,12 +78,29 @@ add_executable(assetbridge-capability-tests
 target_link_libraries(assetbridge-capability-tests PRIVATE assetbridge-product)
 target_compile_options(assetbridge-capability-tests PRIVATE /W4 /permissive- /utf-8)
 
+add_executable(assetbridge-scene-semantics-tests
+    tests/scene_semantics_tests.cpp
+)
+
+target_link_libraries(assetbridge-scene-semantics-tests
+    PRIVATE
+        assetbridge-core
+        assimp::assimp
+        nlohmann_json::nlohmann_json
+)
+target_compile_options(assetbridge-scene-semantics-tests PRIVATE /W4 /permissive- /utf-8)
+
 add_test(NAME assetbridge-core-inspector COMMAND assetbridge-tests)
 set_tests_properties(assetbridge-core-inspector PROPERTIES
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
 )
 
 add_test(NAME assetbridge-capability-matrix COMMAND assetbridge-capability-tests)
+
+add_test(NAME assetbridge-scene-semantics COMMAND assetbridge-scene-semantics-tests)
+set_tests_properties(assetbridge-scene-semantics PROPERTIES
+    WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+)
 
 function(add_assetbridge_cli_test test_name)
     add_test(
@@ -172,7 +190,8 @@ add_assetbridge_cli_test(assetbridge-cli-preflight-stl-text
     "-DASSETBRIDGE_INPUT=${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/minimal_triangle.obj"
     "-DASSETBRIDGE_TARGET=stl"
     "-DASSETBRIDGE_EXPECTED_EXIT=0"
-    "-DASSETBRIDGE_EXPECTED_STDOUT=Target Format: stl|uv0_unsupported|material_slots_unsupported|Compatibility Result: lossy|Overall Result: lossy"
+    "-DASSETBRIDGE_EXPECTED_STDOUT=Target Format: stl|has_node_hierarchy: false|normals_partial|uv0_unsupported|material_slots_unsupported|Compatibility Result: lossy|Overall Result: lossy"
+    "-DASSETBRIDGE_UNEXPECTED_STDOUT=node_hierarchy_unsupported"
 )
 
 add_assetbridge_cli_test(assetbridge-cli-preflight-stl-json

@@ -51,13 +51,16 @@ enum class LossSeverity {
 
 struct AnimationFeature {
     std::string name;
-    double duration_seconds = 0.0;
-    double duration_ticks = 0.0;
-    double ticks_per_second = 0.0;
+    std::optional<double> duration_seconds;
+    std::optional<double> duration_ticks;
+    std::optional<double> ticks_per_second;
 };
 
 struct AssetFeatures {
     std::uint64_t mesh_count = 0;
+    // Despite the legacy field name, this means meaningful hierarchy: nested
+    // non-root nodes, non-identity transforms, or mesh instancing. Assimp's
+    // flat identity wrapper nodes do not set this flag.
     bool has_node_hierarchy = false;
     std::uint64_t meshes_with_normals = 0;
     std::uint64_t meshes_with_tangents = 0;
@@ -94,6 +97,10 @@ struct FormatCapability {
 [[nodiscard]] std::string_view to_string(AssetFeature feature) noexcept;
 [[nodiscard]] std::string_view to_string(SupportLevel level) noexcept;
 [[nodiscard]] std::string_view to_string(LossSeverity severity) noexcept;
+
+[[nodiscard]] std::optional<double> animation_duration_seconds(
+    double duration_ticks,
+    double ticks_per_second) noexcept;
 
 [[nodiscard]] const std::array<FormatCapability, 5>& capability_matrix();
 [[nodiscard]] const FormatCapability& capability_for(FormatId id);

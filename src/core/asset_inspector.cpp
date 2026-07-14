@@ -1,6 +1,8 @@
 #include "assetbridge/core/asset_inspector.hpp"
+#include "assetbridge/core/scene_analysis.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <set>
 #include <string>
 #include <unordered_set>
@@ -51,8 +53,7 @@ std::string assimp_string(const aiString& value) {
 AssetFeatures analyze_scene(const aiScene& scene) {
     AssetFeatures features;
     features.mesh_count = scene.mNumMeshes;
-    features.has_node_hierarchy =
-        scene.mRootNode != nullptr && scene.mRootNode->mNumChildren > 0;
+    features.has_node_hierarchy = has_meaningful_node_hierarchy(scene.mRootNode);
     features.embedded_texture_count = scene.mNumTextures;
 
     std::set<unsigned int> referenced_materials;
@@ -156,12 +157,17 @@ AssetFeatures analyze_scene(const aiScene& scene) {
         if (name.empty()) {
             name = "Animation_" + std::to_string(animation_index);
         }
+        const double duration_ticks = animation->mDuration;
         const double ticks_per_second = animation->mTicksPerSecond;
         features.animations.push_back({
             std::move(name),
-            ticks_per_second > 0.0 ? animation->mDuration / ticks_per_second : 0.0,
-            animation->mDuration,
-            ticks_per_second
+            animation_duration_seconds(duration_ticks, ticks_per_second),
+            std::isfinite(duration_ticks)
+                ? std::optional<double>(duration_ticks)
+                : std::nullopt,
+            std::isfinite(ticks_per_second)
+                ? std::optional<double>(ticks_per_second)
+                : std::nullopt
         });
     }
 
