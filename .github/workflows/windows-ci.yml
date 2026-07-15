@@ -97,6 +97,8 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          $pinnedVcpkgRoot = $env:VCPKG_ROOT
+          $pinnedBinaryCache = $env:VCPKG_DEFAULT_BINARY_CACHE
           $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
           $vsPath = & $vswhere -latest -products * `
             -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
@@ -110,6 +112,8 @@ jobs:
             -VsInstallPath $vsPath `
             -SkipAutomaticLocation `
             -DevCmdArguments '-arch=x64 -host_arch=x64'
+          $env:VCPKG_ROOT = $pinnedVcpkgRoot
+          $env:VCPKG_DEFAULT_BINARY_CACHE = $pinnedBinaryCache
 
           cmake --preset msvc-debug -DASSETBRIDGE_PACKAGE_GUI_SMOKE=OFF
 
@@ -117,6 +121,8 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          $pinnedVcpkgRoot = $env:VCPKG_ROOT
+          $pinnedBinaryCache = $env:VCPKG_DEFAULT_BINARY_CACHE
           $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
           $vsPath = & $vswhere -latest -products * `
             -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
@@ -130,6 +136,8 @@ jobs:
             -VsInstallPath $vsPath `
             -SkipAutomaticLocation `
             -DevCmdArguments '-arch=x64 -host_arch=x64'
+          $env:VCPKG_ROOT = $pinnedVcpkgRoot
+          $env:VCPKG_DEFAULT_BINARY_CACHE = $pinnedBinaryCache
 
           cmake --build --preset msvc-debug
 
@@ -153,6 +161,8 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          $pinnedVcpkgRoot = $env:VCPKG_ROOT
+          $pinnedBinaryCache = $env:VCPKG_DEFAULT_BINARY_CACHE
           $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
           $vsPath = & $vswhere -latest -products * `
             -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
@@ -166,6 +176,8 @@ jobs:
             -VsInstallPath $vsPath `
             -SkipAutomaticLocation `
             -DevCmdArguments '-arch=x64 -host_arch=x64'
+          $env:VCPKG_ROOT = $pinnedVcpkgRoot
+          $env:VCPKG_DEFAULT_BINARY_CACHE = $pinnedBinaryCache
 
           cmake --preset msvc-release -DASSETBRIDGE_PACKAGE_GUI_SMOKE=OFF
 
@@ -173,6 +185,8 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          $pinnedVcpkgRoot = $env:VCPKG_ROOT
+          $pinnedBinaryCache = $env:VCPKG_DEFAULT_BINARY_CACHE
           $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
           $vsPath = & $vswhere -latest -products * `
             -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
@@ -186,6 +200,8 @@ jobs:
             -VsInstallPath $vsPath `
             -SkipAutomaticLocation `
             -DevCmdArguments '-arch=x64 -host_arch=x64'
+          $env:VCPKG_ROOT = $pinnedVcpkgRoot
+          $env:VCPKG_DEFAULT_BINARY_CACHE = $pinnedBinaryCache
 
           cmake --build --preset msvc-release
 
@@ -200,6 +216,8 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          $pinnedVcpkgRoot = $env:VCPKG_ROOT
+          $pinnedBinaryCache = $env:VCPKG_DEFAULT_BINARY_CACHE
           $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
           $vsPath = & $vswhere -latest -products * `
             -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
@@ -213,6 +231,8 @@ jobs:
             -VsInstallPath $vsPath `
             -SkipAutomaticLocation `
             -DevCmdArguments '-arch=x64 -host_arch=x64'
+          $env:VCPKG_ROOT = $pinnedVcpkgRoot
+          $env:VCPKG_DEFAULT_BINARY_CACHE = $pinnedBinaryCache
 
           cmake --build --preset msvc-release --target package
 
