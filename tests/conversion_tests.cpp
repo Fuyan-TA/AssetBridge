@@ -22,15 +22,27 @@ int require(bool condition, std::string_view message) {
 
 bool no_temporary_directories(const std::filesystem::path& root) {
     std::error_code error;
-    if (!std::filesystem::exists(root, error)) {
+    std::cout << "DIAG PROBE_BEGIN subtest=transaction_cleanup operation=root_exists"
+              << std::endl;
+    const bool root_exists = std::filesystem::exists(root, error);
+    std::cout << "DIAG PROBE_END subtest=transaction_cleanup operation=root_exists"
+              << " result=" << (root_exists ? "true" : "false")
+              << " error=" << error.value() << std::endl;
+    if (!root_exists) {
         return true;
     }
+    std::cout << "DIAG PROBE_BEGIN subtest=transaction_cleanup operation=directory_scan"
+              << std::endl;
     for (const auto& entry : std::filesystem::directory_iterator(root, error)) {
         const auto name = entry.path().filename().string();
+        std::cout << "DIAG PROBE_ENTRY subtest=transaction_cleanup operation=directory_scan"
+                  << " name=" << name << std::endl;
         if (name.starts_with(".assetbridge-tmp-")) {
             return false;
         }
     }
+    std::cout << "DIAG PROBE_END subtest=transaction_cleanup operation=directory_scan"
+              << " error=" << error.value() << std::endl;
     return !error;
 }
 
