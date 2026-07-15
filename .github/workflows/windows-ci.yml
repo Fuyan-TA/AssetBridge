@@ -92,6 +92,15 @@ jobs:
             throw 'Failed to bootstrap the pinned vcpkg revision.'
           }
 
+          $binaryCache = Join-Path $env:RUNNER_TEMP 'vcpkg-binary-cache'
+          New-Item -ItemType Directory -Force -Path $binaryCache | Out-Null
+          if (-not (Test-Path -LiteralPath $binaryCache -PathType Container)) {
+            throw "Failed to create the vcpkg binary cache: $binaryCache"
+          }
+          $env:VCPKG_DEFAULT_BINARY_CACHE = $binaryCache
+          "VCPKG_DEFAULT_BINARY_CACHE=$binaryCache" |
+            Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
           cmake --preset msvc-debug -DASSETBRIDGE_PACKAGE_GUI_SMOKE=OFF
           cmake --build --preset msvc-debug
           ctest --preset msvc-debug -LE gui
