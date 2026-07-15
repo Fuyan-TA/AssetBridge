@@ -5,6 +5,7 @@
 #include <cmath>
 #include <filesystem>
 #include <iostream>
+#include <optional>
 #include <string_view>
 #include <utility>
 #include <vector>
@@ -21,15 +22,29 @@ int require(bool condition, std::string_view message) {
 
 bool no_temporary_directories(const std::filesystem::path& root) {
     std::error_code error;
-    if (!std::filesystem::exists(root, error)) {
+    std::cout << "DIAG PROBE_BEGIN subtest=transaction_cleanup operation=root_exists"
+              << std::endl;
+    const bool root_exists = std::filesystem::exists(root, error);
+    std::cout << "DIAG PROBE_END subtest=transaction_cleanup operation=root_exists"
+              << " result=" << (root_exists ? "true" : "false")
+              << " error=" << error.value() << std::endl;
+    if (!root_exists) {
         return true;
     }
+    std::cout << "DIAG PROBE_BEGIN subtest=transaction_cleanup operation=directory_scan"
+              << std::endl;
+    const auto temporary_prefix = std::filesystem::path(".assetbridge-tmp-").native();
+    std::size_t entry_index = 0;
     for (const auto& entry : std::filesystem::directory_iterator(root, error)) {
-        const auto name = entry.path().filename().string();
-        if (name.starts_with(".assetbridge-tmp-")) {
+        const auto name = entry.path().filename().native();
+        std::cout << "DIAG PROBE_ENTRY subtest=transaction_cleanup operation=directory_scan"
+                  << " index=" << entry_index++ << std::endl;
+        if (name.starts_with(temporary_prefix)) {
             return false;
         }
     }
+    std::cout << "DIAG PROBE_END subtest=transaction_cleanup operation=directory_scan"
+              << " error=" << error.value() << std::endl;
     return !error;
 }
 
@@ -69,6 +84,38 @@ assetbridge::ConversionMeshAnalysis test_mesh(
     return mesh;
 }
 
+std::string_view stage_name(assetbridge::ConversionStage stage) {
+    using assetbridge::ConversionStage;
+    switch (stage) {
+    case ConversionStage::preflight: return "preflight";
+    case ConversionStage::importing: return "importing";
+    case ConversionStage::exporting: return "exporting";
+    case ConversionStage::reimporting: return "reimporting";
+    case ConversionStage::validating: return "validating";
+    case ConversionStage::committing: return "committing";
+    }
+    return "unknown";
+}
+
+void diagnostic(
+    std::string_view marker,
+    std::string_view subtest,
+    std::optional<assetbridge::ConversionStage> stage = std::nullopt) {
+    std::cout << "DIAG " << marker << " subtest=" << subtest;
+    if (stage) {
+        std::cout << " stage=" << stage_name(*stage);
+    }
+    std::cout << std::endl;
+}
+
+void diagnostic_named_stage(
+    std::string_view marker,
+    std::string_view subtest,
+    std::string_view stage) {
+    std::cout << "DIAG " << marker << " subtest=" << subtest
+              << " stage=" << stage << std::endl;
+}
+
 } // namespace
 
 int wmain(int argc, wchar_t* argv[]) {
@@ -85,6 +132,34 @@ int wmain(int argc, wchar_t* argv[]) {
     int failures = 0;
     const AssetConverter converter;
 
+    const auto run_conversion = [&converter, &output_root](
+                                    std::string_view subtest,
+                                    const std::filesystem::path& input,
+                                    std::vector<ConversionStage>* observed_stages = nullptr) {
+        diagnostic("SUBTEST_BEGIN", subtest);
+        std::optional<ConversionStage> active_stage;
+        auto report = converter.convert(
+            input,
+            FormatId::glb2,
+            output_root,
+            [&](ConversionStage stage) {
+                if (active_stage) {
+                    diagnostic("STAGE_END", subtest, active_stage);
+                }
+                active_stage = stage;
+                diagnostic("STAGE_BEGIN", subtest, active_stage);
+                if (observed_stages) {
+                    observed_stages->push_back(stage);
+                }
+            });
+        if (active_stage) {
+            diagnostic("STAGE_END", subtest, active_stage);
+        }
+        diagnostic("SUBTEST_END", subtest);
+        return report;
+    };
+
+    diagnostic("SUBTEST_BEGIN", "mesh_matching_reordered");
     const std::vector<ConversionMeshAnalysis> reordered_source {
         test_mesh("DuplicateName", 0.5),
         test_mesh("", 2.5)
@@ -101,7 +176,9 @@ int wmain(int argc, wchar_t* argv[]) {
             && reordered_match.matches[0].output_index == 1
             && reordered_match.matches[1].output_index == 0,
         "mesh matching must be independent of output array order");
+    diagnostic("SUBTEST_END", "mesh_matching_reordered");
 
+    diagnostic("SUBTEST_BEGIN", "mesh_matching_duplicate_names");
     const std::vector<ConversionMeshAnalysis> duplicate_source {
         test_mesh("", 0.5),
         test_mesh("", 0.5)
@@ -114,13 +191,13 @@ int wmain(int argc, wchar_t* argv[]) {
             && duplicate_match.matches[0].output_index == 0
             && duplicate_match.matches[1].output_index == 1,
         "duplicate and empty mesh names must use a stable output-ordinal tie-break");
+    diagnostic("SUBTEST_END", "mesh_matching_duplicate_names");
 
     std::vector<ConversionStage> progress_stages;
-    const auto ascii = converter.convert(
+    const auto ascii = run_conversion(
+        "ascii_minimal_triangle",
         source_root / "minimal_triangle.obj",
-        FormatId::glb2,
-        output_root,
-        [&progress_stages](ConversionStage stage) { progress_stages.push_back(stage); });
+        &progress_stages);
     failures += require(static_cast<bool>(ascii), "ASCII OBJ to GLB conversion should succeed");
     failures += require(
         ascii.output_directory.has_value()
@@ -156,8 +233,11 @@ int wmain(int argc, wchar_t* argv[]) {
                 && std::filesystem::file_size(glb) > 0,
             "generated ASCII GLB should exist and be non-empty");
         const AssetInspector inspector;
+        diagnostic_named_stage("STAGE_BEGIN", "ascii_output_inspect", "inspect");
+        const auto output_inspection = inspector.inspect(glb);
+        diagnostic_named_stage("STAGE_END", "ascii_output_inspect", "inspect");
         failures += require(
-            static_cast<bool>(inspector.inspect(glb)),
+            static_cast<bool>(output_inspection),
             "generated ASCII GLB should be inspectable by Assimp");
         failures += require(
             std::filesystem::is_regular_file(
@@ -165,19 +245,17 @@ int wmain(int argc, wchar_t* argv[]) {
             "successful conversion should commit its JSON report");
     }
 
-    const auto conflict = converter.convert(
-        source_root / "minimal_triangle.obj",
-        FormatId::glb2,
-        output_root);
+    const auto conflict = run_conversion(
+        "ascii_output_conflict",
+        source_root / "minimal_triangle.obj");
     failures += require(
         conflict && conflict.output_directory.has_value()
             && conflict.output_directory->filename() == "minimal_triangle_2",
         "existing output should cause a _2 directory");
 
-    const auto unicode = converter.convert(
-        source_root / L"中文三角形.obj",
-        FormatId::glb2,
-        output_root);
+    const auto unicode = run_conversion(
+        "unicode_minimal_triangle",
+        source_root / L"中文三角形.obj");
     failures += require(static_cast<bool>(unicode), "Unicode OBJ and MTL conversion should succeed");
     if (unicode.output_directory) {
         const auto unicode_glb = *unicode.output_directory / L"中文三角形.glb";
@@ -187,10 +265,9 @@ int wmain(int argc, wchar_t* argv[]) {
             "Unicode GLB path should exist and be non-empty");
     }
 
-    const auto multi = converter.convert(
-        source_root / "multi_two_triangles.obj",
-        FormatId::glb2,
-        output_root);
+    const auto multi = run_conversion(
+        "ascii_multi_two_triangles",
+        source_root / "multi_two_triangles.obj");
     failures += require(static_cast<bool>(multi), "two independent OBJ meshes should convert");
     failures += require(all_checks_pass(multi), "multi-mesh round-trip checks should pass");
     if (multi.source_analysis && multi.output_analysis) {
@@ -214,10 +291,9 @@ int wmain(int argc, wchar_t* argv[]) {
             && has_passed_check(multi, "per_mesh_triangle_count"),
         "multi-mesh conversion should report strict per-mesh validation");
 
-    const auto quad = converter.convert(
-        source_root / "multi_triangle_quad.obj",
-        FormatId::glb2,
-        output_root);
+    const auto quad = run_conversion(
+        "ascii_multi_triangle_quad",
+        source_root / "multi_triangle_quad.obj");
     failures += require(static_cast<bool>(quad), "triangle plus quad OBJ should convert after preparation");
     failures += require(all_checks_pass(quad), "triangulated multi-mesh checks should pass");
     if (quad.triangulation && quad.source_analysis && quad.output_analysis) {
@@ -235,37 +311,33 @@ int wmain(int argc, wchar_t* argv[]) {
             "triangle plus quad should become three triangles without merging meshes");
     }
 
-    const auto unicode_multi = converter.convert(
-        source_root / L"中文多网格.obj",
-        FormatId::glb2,
-        output_root);
+    const auto unicode_multi = run_conversion(
+        "unicode_multi_mesh",
+        source_root / L"中文多网格.obj");
     failures += require(
         unicode_multi && unicode_multi.output_analysis
             && unicode_multi.output_analysis->mesh_count == 2,
         "Unicode OBJ/MTL multi-mesh conversion should preserve two meshes");
 
-    const auto empty_mesh = converter.convert(
-        source_root / "empty_mesh.obj",
-        FormatId::glb2,
-        output_root);
+    const auto empty_mesh = run_conversion(
+        "reject_empty_mesh",
+        source_root / "empty_mesh.obj");
     failures += require(!empty_mesh, "empty or faceless OBJ mesh should be rejected");
     failures += require(
         !std::filesystem::exists(output_root / "empty_mesh"),
         "empty mesh rejection must not leave a final directory");
 
-    const auto invalid = converter.convert(
-        source_root / "invalid.obj",
-        FormatId::glb2,
-        output_root);
+    const auto invalid = run_conversion(
+        "reject_invalid_obj",
+        source_root / "invalid.obj");
     failures += require(!invalid, "invalid OBJ conversion should fail");
     failures += require(
         !std::filesystem::exists(output_root / "invalid"),
         "invalid OBJ must not leave a final directory");
 
-    const auto unverified = converter.convert(
-        source_root / "unverified_texture.obj",
-        FormatId::glb2,
-        output_root);
+    const auto unverified = run_conversion(
+        "reject_unverified_texture",
+        source_root / "unverified_texture.obj");
     failures += require(!unverified, "unverified texture feature should block conversion");
     failures += require(
         unverified.error_code == ConversionErrorCode::route_feature_unverified,
@@ -273,8 +345,11 @@ int wmain(int argc, wchar_t* argv[]) {
     failures += require(
         !std::filesystem::exists(output_root / "unverified_texture"),
         "blocked feature must not leave a final directory");
+    diagnostic_named_stage("STAGE_BEGIN", "transaction_cleanup", "cleanup");
+    const bool cleanup_complete = no_temporary_directories(output_root);
+    diagnostic_named_stage("STAGE_END", "transaction_cleanup", "cleanup");
     failures += require(
-        no_temporary_directories(output_root),
+        cleanup_complete,
         "successful and failed transactions must not leave temporary directories");
 
     if (failures == 0) {

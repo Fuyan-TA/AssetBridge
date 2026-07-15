@@ -663,8 +663,9 @@ void validate_conversion_success(const Json& report, const std::filesystem::path
     const Json committed_report = Json::parse(committed_input);
     require(committed_report == report, "stdout JSON and committed report must match");
 
+    const auto temporary_prefix = std::filesystem::path(".assetbridge-tmp-").native();
     for (const auto& entry : std::filesystem::directory_iterator(output_directory.parent_path())) {
-        require(!entry.path().filename().string().starts_with(".assetbridge-tmp-"),
+        require(!entry.path().filename().native().starts_with(temporary_prefix),
             "successful conversion left a temporary directory");
     }
 }

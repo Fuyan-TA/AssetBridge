@@ -2,24 +2,103 @@ name: Windows x64 CI
 
 on:
   push:
+    branches:
+      - main
   pull_request:
+    branches:
+      - main
 
 permissions:
   contents: read
 
 jobs:
   build-and-test:
-    runs-on: windows-latest
+    runs-on: windows-2022
     timeout-minutes: 45
 
     steps:
       - name: Check out source
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
-      - name: Configure, build, and test Debug and Release
+      - name: Prepare pinned vcpkg
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          $vcpkgRevision = 'b5229343b4b80264ed51e89c6a7dcd0cbe85e9cc'
+          $baseline = 'b5229343b4b80264ed51e89c6a7dcd0cbe85e9cc'
+          $env:VCPKG_ROOT = Join-Path $env:RUNNER_TEMP "vcpkg-$vcpkgRevision"
+
+          & git init $env:VCPKG_ROOT
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Failed to initialize the pinned vcpkg repository.'
+          }
+          & git -C $env:VCPKG_ROOT remote add origin https://github.com/microsoft/vcpkg.git
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Failed to configure the official vcpkg remote.'
+          }
+          & git -C $env:VCPKG_ROOT fetch --depth 1 --no-tags origin $vcpkgRevision
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to fetch the pinned vcpkg revision: $vcpkgRevision"
+          }
+          & git -C $env:VCPKG_ROOT checkout --detach $vcpkgRevision
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to check out the pinned vcpkg revision: $vcpkgRevision"
+          }
+
+          $checkedOutRevision = & git -C $env:VCPKG_ROOT rev-parse HEAD
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Failed to read the checked-out vcpkg revision.'
+          }
+          if ($checkedOutRevision -ne $vcpkgRevision) {
+            throw "Unexpected vcpkg revision: $checkedOutRevision"
+          }
+
+          & git -C $env:VCPKG_ROOT cat-file -e "$baseline^{commit}"
+          if ($LASTEXITCODE -ne 0) {
+            throw "vcpkg baseline commit is unavailable: $baseline"
+          }
+          & git -C $env:VCPKG_ROOT show "${baseline}:versions/baseline.json" | Out-Null
+          if ($LASTEXITCODE -ne 0) {
+            throw "vcpkg baseline file is unavailable: ${baseline}:versions/baseline.json"
+          }
+
+          $baselineDocument = & git -C $env:VCPKG_ROOT show "${baseline}:versions/baseline.json" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $baselineDocument.default.sdl3.baseline -ne '3.4.12') {
+            throw 'The pinned baseline does not select sdl3 3.4.12.'
+          }
+          $sdl3Versions = & git -C $env:VCPKG_ROOT show "${vcpkgRevision}:versions/s-/sdl3.json" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) {
+            throw 'The pinned vcpkg revision does not provide the sdl3 version database.'
+          }
+          $hasSdl3Version = $sdl3Versions.versions | Where-Object {
+            $_.version -eq '3.4.12' -and $_.'port-version' -eq 0
+          }
+          if (-not $hasSdl3Version) {
+            throw 'The pinned vcpkg revision does not provide sdl3 3.4.12.'
+          }
+
+          & (Join-Path $env:VCPKG_ROOT 'bootstrap-vcpkg.bat') -disableMetrics
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Failed to bootstrap the pinned vcpkg revision.'
+          }
+
+          $binaryCache = Join-Path $env:RUNNER_TEMP 'vcpkg-binary-cache'
+          New-Item -ItemType Directory -Force -Path $binaryCache | Out-Null
+          if (-not (Test-Path -LiteralPath $binaryCache -PathType Container)) {
+            throw "Failed to create the vcpkg binary cache: $binaryCache"
+          }
+          $env:VCPKG_DEFAULT_BINARY_CACHE = $binaryCache
+          "VCPKG_ROOT=$env:VCPKG_ROOT" |
+            Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          "VCPKG_DEFAULT_BINARY_CACHE=$binaryCache" |
+            Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Configure Debug
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $pinnedVcpkgRoot = $env:VCPKG_ROOT
+          $pinnedBinaryCache = $env:VCPKG_DEFAULT_BINARY_CACHE
           $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
           $vsPath = & $vswhere -latest -products * `
             -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
@@ -33,19 +112,128 @@ jobs:
             -VsInstallPath $vsPath `
             -SkipAutomaticLocation `
             -DevCmdArguments '-arch=x64 -host_arch=x64'
-
-          if (-not $env:VCPKG_INSTALLATION_ROOT) {
-            throw 'The hosted runner did not provide VCPKG_INSTALLATION_ROOT.'
-          }
-          $env:VCPKG_ROOT = $env:VCPKG_INSTALLATION_ROOT
+          $env:VCPKG_ROOT = $pinnedVcpkgRoot
+          $env:VCPKG_DEFAULT_BINARY_CACHE = $pinnedBinaryCache
 
           cmake --preset msvc-debug -DASSETBRIDGE_PACKAGE_GUI_SMOKE=OFF
+
+      - name: Build Debug
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $pinnedVcpkgRoot = $env:VCPKG_ROOT
+          $pinnedBinaryCache = $env:VCPKG_DEFAULT_BINARY_CACHE
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vsPath = & $vswhere -latest -products * `
+            -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+            -property installationPath
+          if (-not $vsPath) {
+            throw 'MSVC Build Tools were not found on the Windows runner.'
+          }
+
+          Import-Module "$vsPath\Common7\Tools\Microsoft.VisualStudio.DevShell.dll"
+          Enter-VsDevShell `
+            -VsInstallPath $vsPath `
+            -SkipAutomaticLocation `
+            -DevCmdArguments '-arch=x64 -host_arch=x64'
+          $env:VCPKG_ROOT = $pinnedVcpkgRoot
+          $env:VCPKG_DEFAULT_BINARY_CACHE = $pinnedBinaryCache
+
           cmake --build --preset msvc-debug
-          ctest --preset msvc-debug -LE gui
+
+      - name: Run Debug conversion core diagnostics
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          ctest --test-dir out/build/msvc-debug `
+            -R assetbridge-conversion-core `
+            -V --output-on-failure --timeout 180
+
+      - name: Run remaining Debug non-GUI tests
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          ctest --test-dir out/build/msvc-debug `
+            -LE gui -E assetbridge-conversion-core `
+            --output-on-failure --timeout 180
+
+      - name: Configure Release
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $pinnedVcpkgRoot = $env:VCPKG_ROOT
+          $pinnedBinaryCache = $env:VCPKG_DEFAULT_BINARY_CACHE
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vsPath = & $vswhere -latest -products * `
+            -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+            -property installationPath
+          if (-not $vsPath) {
+            throw 'MSVC Build Tools were not found on the Windows runner.'
+          }
+
+          Import-Module "$vsPath\Common7\Tools\Microsoft.VisualStudio.DevShell.dll"
+          Enter-VsDevShell `
+            -VsInstallPath $vsPath `
+            -SkipAutomaticLocation `
+            -DevCmdArguments '-arch=x64 -host_arch=x64'
+          $env:VCPKG_ROOT = $pinnedVcpkgRoot
+          $env:VCPKG_DEFAULT_BINARY_CACHE = $pinnedBinaryCache
 
           cmake --preset msvc-release -DASSETBRIDGE_PACKAGE_GUI_SMOKE=OFF
+
+      - name: Build Release
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $pinnedVcpkgRoot = $env:VCPKG_ROOT
+          $pinnedBinaryCache = $env:VCPKG_DEFAULT_BINARY_CACHE
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vsPath = & $vswhere -latest -products * `
+            -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+            -property installationPath
+          if (-not $vsPath) {
+            throw 'MSVC Build Tools were not found on the Windows runner.'
+          }
+
+          Import-Module "$vsPath\Common7\Tools\Microsoft.VisualStudio.DevShell.dll"
+          Enter-VsDevShell `
+            -VsInstallPath $vsPath `
+            -SkipAutomaticLocation `
+            -DevCmdArguments '-arch=x64 -host_arch=x64'
+          $env:VCPKG_ROOT = $pinnedVcpkgRoot
+          $env:VCPKG_DEFAULT_BINARY_CACHE = $pinnedBinaryCache
+
           cmake --build --preset msvc-release
-          ctest --preset msvc-release -LE gui
+
+      - name: Run Release non-GUI tests
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          ctest --test-dir out/build/msvc-release `
+            -LE gui --output-on-failure --timeout 180
+
+      - name: Build release package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $pinnedVcpkgRoot = $env:VCPKG_ROOT
+          $pinnedBinaryCache = $env:VCPKG_DEFAULT_BINARY_CACHE
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vsPath = & $vswhere -latest -products * `
+            -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+            -property installationPath
+          if (-not $vsPath) {
+            throw 'MSVC Build Tools were not found on the Windows runner.'
+          }
+
+          Import-Module "$vsPath\Common7\Tools\Microsoft.VisualStudio.DevShell.dll"
+          Enter-VsDevShell `
+            -VsInstallPath $vsPath `
+            -SkipAutomaticLocation `
+            -DevCmdArguments '-arch=x64 -host_arch=x64'
+          $env:VCPKG_ROOT = $pinnedVcpkgRoot
+          $env:VCPKG_DEFAULT_BINARY_CACHE = $pinnedBinaryCache
+
           cmake --build --preset msvc-release --target package
 
       # Hosted Windows runners do not provide a reliable interactive desktop or
