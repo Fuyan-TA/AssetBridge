@@ -34,30 +34,33 @@ jobs:
             -SkipAutomaticLocation `
             -DevCmdArguments '-arch=x64 -host_arch=x64'
 
-          if (-not $env:VCPKG_INSTALLATION_ROOT) {
-            throw 'The hosted runner did not provide VCPKG_INSTALLATION_ROOT.'
-          }
-          $env:VCPKG_ROOT = $env:VCPKG_INSTALLATION_ROOT
-
+          $vcpkgRevision = 'b5229343b4b80264ed51e89c6a7dcd0cbe85e9cc'
           $baseline = 'b5229343b4b80264ed51e89c6a7dcd0cbe85e9cc'
-          if (-not (Test-Path -LiteralPath $env:VCPKG_ROOT -PathType Container)) {
-            throw "VCPKG_ROOT does not exist: $env:VCPKG_ROOT"
+          $env:VCPKG_ROOT = Join-Path $env:RUNNER_TEMP "vcpkg-$vcpkgRevision"
+
+          & git init $env:VCPKG_ROOT
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Failed to initialize the pinned vcpkg repository.'
           }
-          if (-not (Test-Path -LiteralPath (Join-Path $env:VCPKG_ROOT '.git'))) {
-            throw 'VCPKG_ROOT is not a Git repository.'
+          & git -C $env:VCPKG_ROOT remote add origin https://github.com/microsoft/vcpkg.git
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Failed to configure the official vcpkg remote.'
+          }
+          & git -C $env:VCPKG_ROOT fetch --depth 1 --no-tags origin $vcpkgRevision
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to fetch the pinned vcpkg revision: $vcpkgRevision"
+          }
+          & git -C $env:VCPKG_ROOT checkout --detach $vcpkgRevision
+          if ($LASTEXITCODE -ne 0) {
+            throw "Failed to check out the pinned vcpkg revision: $vcpkgRevision"
           }
 
-          $isShallow = & git -C $env:VCPKG_ROOT rev-parse --is-shallow-repository
+          $checkedOutRevision = & git -C $env:VCPKG_ROOT rev-parse HEAD
           if ($LASTEXITCODE -ne 0) {
-            throw 'Unable to determine whether the vcpkg repository is shallow.'
+            throw 'Failed to read the checked-out vcpkg revision.'
           }
-          if ($isShallow -eq 'true') {
-            & git -C $env:VCPKG_ROOT fetch --unshallow --no-tags origin
-          } else {
-            & git -C $env:VCPKG_ROOT fetch --no-tags origin
-          }
-          if ($LASTEXITCODE -ne 0) {
-            throw 'Failed to hydrate the vcpkg Git history.'
+          if ($checkedOutRevision -ne $vcpkgRevision) {
+            throw "Unexpected vcpkg revision: $checkedOutRevision"
           }
 
           & git -C $env:VCPKG_ROOT cat-file -e "$baseline^{commit}"
@@ -67,6 +70,26 @@ jobs:
           & git -C $env:VCPKG_ROOT show "${baseline}:versions/baseline.json" | Out-Null
           if ($LASTEXITCODE -ne 0) {
             throw "vcpkg baseline file is unavailable: ${baseline}:versions/baseline.json"
+          }
+
+          $baselineDocument = & git -C $env:VCPKG_ROOT show "${baseline}:versions/baseline.json" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $baselineDocument.default.sdl3.baseline -ne '3.4.12') {
+            throw 'The pinned baseline does not select sdl3 3.4.12.'
+          }
+          $sdl3Versions = & git -C $env:VCPKG_ROOT show "${vcpkgRevision}:versions/s-/sdl3.json" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) {
+            throw 'The pinned vcpkg revision does not provide the sdl3 version database.'
+          }
+          $hasSdl3Version = $sdl3Versions.versions | Where-Object {
+            $_.version -eq '3.4.12' -and $_.'port-version' -eq 0
+          }
+          if (-not $hasSdl3Version) {
+            throw 'The pinned vcpkg revision does not provide sdl3 3.4.12.'
+          }
+
+          & (Join-Path $env:VCPKG_ROOT 'bootstrap-vcpkg.bat') -disableMetrics
+          if ($LASTEXITCODE -ne 0) {
+            throw 'Failed to bootstrap the pinned vcpkg revision.'
           }
 
           cmake --preset msvc-debug -DASSETBRIDGE_PACKAGE_GUI_SMOKE=OFF
