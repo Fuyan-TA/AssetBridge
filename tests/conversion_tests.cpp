@@ -33,11 +33,13 @@ bool no_temporary_directories(const std::filesystem::path& root) {
     }
     std::cout << "DIAG PROBE_BEGIN subtest=transaction_cleanup operation=directory_scan"
               << std::endl;
+    const auto temporary_prefix = std::filesystem::path(".assetbridge-tmp-").native();
+    std::size_t entry_index = 0;
     for (const auto& entry : std::filesystem::directory_iterator(root, error)) {
-        const auto name = entry.path().filename().string();
+        const auto name = entry.path().filename().native();
         std::cout << "DIAG PROBE_ENTRY subtest=transaction_cleanup operation=directory_scan"
-                  << " name=" << name << std::endl;
-        if (name.starts_with(".assetbridge-tmp-")) {
+                  << " index=" << entry_index++ << std::endl;
+        if (name.starts_with(temporary_prefix)) {
             return false;
         }
     }
