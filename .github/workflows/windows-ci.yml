@@ -2,7 +2,11 @@ name: Windows x64 CI
 
 on:
   push:
+    branches:
+      - main
   pull_request:
+    branches:
+      - main
 
 permissions:
   contents: read
@@ -16,24 +20,10 @@ jobs:
       - name: Check out source
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
 
-      - name: Configure, build, and test Debug and Release
+      - name: Prepare pinned vcpkg
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          $vsPath = & $vswhere -latest -products * `
-            -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
-            -property installationPath
-          if (-not $vsPath) {
-            throw 'MSVC Build Tools were not found on the Windows runner.'
-          }
-
-          Import-Module "$vsPath\Common7\Tools\Microsoft.VisualStudio.DevShell.dll"
-          Enter-VsDevShell `
-            -VsInstallPath $vsPath `
-            -SkipAutomaticLocation `
-            -DevCmdArguments '-arch=x64 -host_arch=x64'
-
           $vcpkgRevision = 'b5229343b4b80264ed51e89c6a7dcd0cbe85e9cc'
           $baseline = 'b5229343b4b80264ed51e89c6a7dcd0cbe85e9cc'
           $env:VCPKG_ROOT = Join-Path $env:RUNNER_TEMP "vcpkg-$vcpkgRevision"
@@ -98,16 +88,132 @@ jobs:
             throw "Failed to create the vcpkg binary cache: $binaryCache"
           }
           $env:VCPKG_DEFAULT_BINARY_CACHE = $binaryCache
+          "VCPKG_ROOT=$env:VCPKG_ROOT" |
+            Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           "VCPKG_DEFAULT_BINARY_CACHE=$binaryCache" |
             Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
+      - name: Configure Debug
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vsPath = & $vswhere -latest -products * `
+            -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+            -property installationPath
+          if (-not $vsPath) {
+            throw 'MSVC Build Tools were not found on the Windows runner.'
+          }
+
+          Import-Module "$vsPath\Common7\Tools\Microsoft.VisualStudio.DevShell.dll"
+          Enter-VsDevShell `
+            -VsInstallPath $vsPath `
+            -SkipAutomaticLocation `
+            -DevCmdArguments '-arch=x64 -host_arch=x64'
+
           cmake --preset msvc-debug -DASSETBRIDGE_PACKAGE_GUI_SMOKE=OFF
+
+      - name: Build Debug
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vsPath = & $vswhere -latest -products * `
+            -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+            -property installationPath
+          if (-not $vsPath) {
+            throw 'MSVC Build Tools were not found on the Windows runner.'
+          }
+
+          Import-Module "$vsPath\Common7\Tools\Microsoft.VisualStudio.DevShell.dll"
+          Enter-VsDevShell `
+            -VsInstallPath $vsPath `
+            -SkipAutomaticLocation `
+            -DevCmdArguments '-arch=x64 -host_arch=x64'
+
           cmake --build --preset msvc-debug
-          ctest --preset msvc-debug -LE gui
+
+      - name: Run Debug conversion core diagnostics
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          ctest --test-dir out/build/msvc-debug `
+            -R assetbridge-conversion-core `
+            -V --output-on-failure --timeout 180
+
+      - name: Run remaining Debug non-GUI tests
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          ctest --test-dir out/build/msvc-debug `
+            -LE gui -E assetbridge-conversion-core `
+            --output-on-failure --timeout 180
+
+      - name: Configure Release
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vsPath = & $vswhere -latest -products * `
+            -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+            -property installationPath
+          if (-not $vsPath) {
+            throw 'MSVC Build Tools were not found on the Windows runner.'
+          }
+
+          Import-Module "$vsPath\Common7\Tools\Microsoft.VisualStudio.DevShell.dll"
+          Enter-VsDevShell `
+            -VsInstallPath $vsPath `
+            -SkipAutomaticLocation `
+            -DevCmdArguments '-arch=x64 -host_arch=x64'
 
           cmake --preset msvc-release -DASSETBRIDGE_PACKAGE_GUI_SMOKE=OFF
+
+      - name: Build Release
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vsPath = & $vswhere -latest -products * `
+            -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+            -property installationPath
+          if (-not $vsPath) {
+            throw 'MSVC Build Tools were not found on the Windows runner.'
+          }
+
+          Import-Module "$vsPath\Common7\Tools\Microsoft.VisualStudio.DevShell.dll"
+          Enter-VsDevShell `
+            -VsInstallPath $vsPath `
+            -SkipAutomaticLocation `
+            -DevCmdArguments '-arch=x64 -host_arch=x64'
+
           cmake --build --preset msvc-release
-          ctest --preset msvc-release -LE gui
+
+      - name: Run Release non-GUI tests
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          ctest --test-dir out/build/msvc-release `
+            -LE gui --output-on-failure --timeout 180
+
+      - name: Build release package
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vsPath = & $vswhere -latest -products * `
+            -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
+            -property installationPath
+          if (-not $vsPath) {
+            throw 'MSVC Build Tools were not found on the Windows runner.'
+          }
+
+          Import-Module "$vsPath\Common7\Tools\Microsoft.VisualStudio.DevShell.dll"
+          Enter-VsDevShell `
+            -VsInstallPath $vsPath `
+            -SkipAutomaticLocation `
+            -DevCmdArguments '-arch=x64 -host_arch=x64'
+
           cmake --build --preset msvc-release --target package
 
       # Hosted Windows runners do not provide a reliable interactive desktop or
