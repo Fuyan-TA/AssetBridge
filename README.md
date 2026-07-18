@@ -15,6 +15,25 @@ OBJ-to-GLB route that has automated and local acceptance evidence.
 
 Local file-system paths are redacted in documentation screenshots.
 
+## v0.2 development status
+
+The current development branch extends only the verified OBJ-to-GLB2 route.
+It resolves mesh-referenced MTL materials and local `map_Kd` images, explicitly
+embeds PNG/JPEG compressed bytes in the GLB BIN chunk, and validates the GLB
+container before the existing Assimp reimport and geometry checks. Multiple
+referenced materials, per-material Kd colors, distinct images, and shared-image
+deduplication are covered by self-authored fixtures.
+
+Companion files are restricted to the OBJ directory tree. Absolute paths, UNC
+paths, URLs, normalized `../` escapes, missing files, non-regular files,
+unsupported extensions, signature mismatches, transparency, map options, and
+non-Base-Color texture semantics produce stable blocking diagnostics. This
+scope does not include normal, bump, opacity, metallic, roughness, specular, or
+emissive textures; image transcoding; texture transforms; or alpha semantics.
+
+This is unreleased development work. The published v0.1.0 package and tag are
+unchanged.
+
 ## v0.1.0 scope
 
 The verified product scope is:

@@ -4,7 +4,25 @@ All notable changes to AssetBridge are documented here.
 
 ## [Unreleased]
 
-No product capability is currently scheduled for this section.
+### Added
+
+- Candidate verified support for multiple mesh-referenced OBJ materials,
+  per-material Kd colors, and one local PNG/JPEG `map_Kd` per material.
+- Asset-root-bounded companion-file resolver with stable path, signature,
+  semantic, transparency, and resource-limit errors.
+- Explicit Assimp `aiTexture` embedding with shared-image deduplication and
+  original compressed-byte preservation.
+- GLB v2 JSON/BIN container validation for embedded images, material/texture
+  bindings, bufferView bounds, signatures, and local-path leakage.
+- Compatible texture diagnostics in preflight/conversion JSON, CLI text, and
+  the desktop interface.
+
+### Still unsupported
+
+- Transparency and alpha semantics, texture options/transforms, non-Base-Color
+  texture semantics, image conversion, and network/Data URI inputs.
+- Meaningful hierarchy, instancing, multiple UV channels, vertex colors,
+  unverified tangent/PBR data, and character data.
 
 ## [0.1.0] - 2026-07-15
 
