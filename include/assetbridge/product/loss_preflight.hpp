@@ -47,6 +47,13 @@ struct PreflightDecision {
     std::vector<LossItem> losses;
 };
 
+// Pure product-layer evidence supplied by Core after it has inspected the
+// source asset's companion files. This type intentionally contains no Assimp,
+// CLI, or filesystem objects.
+struct RoutePreflightEvidence {
+    bool companion_analysis_complete = false;
+};
+
 [[nodiscard]] std::string_view to_string(CompatibilityResult result) noexcept;
 [[nodiscard]] std::string_view to_string(OverallResult result) noexcept;
 
@@ -61,7 +68,8 @@ struct PreflightDecision {
     FormatId target,
     const AssetFeatures& source_features,
     bool runtime_exporter_available,
-    bool asset_valid = true);
+    bool asset_valid = true,
+    const RoutePreflightEvidence& evidence = {});
 
 void append_preflight_losses(
     PreflightDecision& decision,

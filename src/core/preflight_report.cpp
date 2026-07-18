@@ -117,25 +117,31 @@ PreflightReport create_preflight_report(
     }
 
     const auto source = source_status(file);
-    auto decision = source.format.has_value()
-        ? evaluate_route_preflight(
-            *source.format,
-            target,
-            features,
-            runtime_exporter_available,
-            static_cast<bool>(inspection))
-        : evaluate_preflight(
-            target,
-            features,
-            runtime_exporter_available,
-            static_cast<bool>(inspection));
-
     std::optional<CompanionResolution> companions;
     if (source.format == FormatId::obj && inspection.features.has_value()) {
         const CompanionResolver resolver;
         companions = resolver.resolve(
             file,
             inspection.features->referenced_material_names);
+    }
+    const RoutePreflightEvidence evidence {
+        companions.has_value()
+    };
+    auto decision = source.format.has_value()
+        ? evaluate_route_preflight(
+            *source.format,
+            target,
+            features,
+            runtime_exporter_available,
+            static_cast<bool>(inspection),
+            evidence)
+        : evaluate_preflight(
+            target,
+            features,
+            runtime_exporter_available,
+            static_cast<bool>(inspection));
+
+    if (companions.has_value()) {
         append_preflight_losses(decision, companion_losses(*companions));
     }
 

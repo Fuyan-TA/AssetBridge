@@ -19,8 +19,10 @@ enum class ConversionErrorCode {
     unsupported_source_format,
     route_not_enabled,
     route_feature_unverified,
+    companion_resolution_failed,
     output_root_error,
     import_failed,
+    texture_embedding_failed,
     export_failed,
     reimport_failed,
     validation_failed,
@@ -31,7 +33,9 @@ enum class ConversionErrorCode {
 enum class ConversionStage {
     preflight,
     importing,
+    embedding_textures,
     exporting,
+    validating_textures,
     reimporting,
     validating,
     committing

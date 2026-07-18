@@ -578,7 +578,8 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
         }
 
         if (state.status() == AppStatus::converting
-            && (worker.stage() == assetbridge::ConversionStage::reimporting
+            && (worker.stage() == assetbridge::ConversionStage::validating_textures
+                || worker.stage() == assetbridge::ConversionStage::reimporting
                 || worker.stage() == assetbridge::ConversionStage::validating
                 || worker.stage() == assetbridge::ConversionStage::committing)) {
             state.mark_validating();

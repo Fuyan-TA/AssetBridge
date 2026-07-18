@@ -124,7 +124,8 @@ PreflightDecision evaluate_route_preflight(
     FormatId target,
     const AssetFeatures& source_features,
     bool runtime_exporter_available,
-    bool asset_valid) {
+    bool asset_valid,
+    const RoutePreflightEvidence& evidence) {
     auto decision = evaluate_preflight(
         target,
         source_features,
@@ -136,7 +137,17 @@ PreflightDecision evaluate_route_preflight(
 
     if (route.product_enabled && route.verified && asset_valid) {
         for (auto& assessment : decision.assessments) {
-            if (route_feature_verified(route, assessment.feature)) {
+            const bool companion_verified_external_texture =
+                assessment.feature == AssetFeature::external_textures
+                && evidence.companion_analysis_complete
+                && route_feature_capability(
+                    route,
+                    RouteFeature::base_color_texture).product_enabled
+                && route_feature_capability(
+                    route,
+                    RouteFeature::base_color_texture).verified;
+            if (route_feature_verified(route, assessment.feature)
+                || companion_verified_external_texture) {
                 assessment.support = SupportLevel::supported;
                 assessment.reason = "Feature is verified for this AssetBridge conversion route.";
             } else {
@@ -152,7 +163,11 @@ PreflightDecision evaluate_route_preflight(
             }
         }
 
-        if (source_features.referenced_material_count > 1) {
+        const auto& multiple_materials = route_feature_capability(
+            route,
+            RouteFeature::multiple_referenced_materials);
+        if (source_features.referenced_material_count > 1
+            && (!multiple_materials.product_enabled || !multiple_materials.verified)) {
             decision.losses.push_back({
                 "route_feature_unverified",
                 AssetFeature::material_slots,

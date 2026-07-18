@@ -89,9 +89,12 @@ int main() {
             "route feature capabilities must be unique");
         for (const auto feature : texture_route_features) {
             const auto& capability = route_feature_capability(route, feature);
+            const bool textured_obj_to_glb =
+                route.source == FormatId::obj && route.target == FormatId::glb2;
             failures += require(
-                !capability.product_enabled && !capability.verified,
-                "v0.2 candidate features must remain disabled until end-to-end validation exists");
+                capability.product_enabled == textured_obj_to_glb
+                    && capability.verified == textured_obj_to_glb,
+                "only the verified OBJ to GLB2 route may enable v0.2 texture features");
             failures += require(
                 to_string(feature) != "unknown",
                 "every route feature must have a stable code");
@@ -128,7 +131,33 @@ int main() {
         "external texture should remain blocked for the Phase 4 route");
     failures += require(
         has_route_feature_block(textured, AssetFeature::external_textures),
-        "external texture block should use route_feature_unverified");
+        "external textures without companion evidence must remain blocked");
+
+    const auto resolved_textured = evaluate_route_preflight(
+        FormatId::obj,
+        FormatId::glb2,
+        textured_features,
+        true,
+        true,
+        RoutePreflightEvidence { true });
+    failures += require(
+        resolved_textured.overall_result == OverallResult::safe
+            && !has_route_feature_block(
+                resolved_textured, AssetFeature::external_textures),
+        "completed companion analysis should admit verified base-color textures");
+
+    auto multiple_material_features = textured_features;
+    multiple_material_features.referenced_material_count = 2;
+    const auto multiple_materials = evaluate_route_preflight(
+        FormatId::obj,
+        FormatId::glb2,
+        multiple_material_features,
+        true,
+        true,
+        RoutePreflightEvidence { true });
+    failures += require(
+        multiple_materials.overall_result == OverallResult::safe,
+        "multiple referenced materials with completed companion analysis should be safe");
 
     auto multi_mesh_features = supported_features;
     multi_mesh_features.mesh_count = 2;

@@ -2,7 +2,9 @@
 
 #include "assetbridge/core/asset_inspector.hpp"
 #include "assetbridge/core/conversion_serializer.hpp"
+#include "assetbridge/core/glb_container.hpp"
 #include "assetbridge/core/runtime_capabilities.hpp"
+#include "assetbridge/core/texture_embedder.hpp"
 #include "assetbridge/product/conversion_routes.hpp"
 
 #include <algorithm>
@@ -10,6 +12,7 @@
 #include <chrono>
 #include <cmath>
 #include <fstream>
+#include <iterator>
 #include <limits>
 #include <set>
 #include <sstream>
@@ -449,6 +452,10 @@ bool contains_route_feature_block(const PreflightReport& preflight) {
         [](const LossItem& loss) { return loss.code == "route_feature_unverified"; });
 }
 
+bool contains_companion_block(const PreflightReport& preflight) {
+    return preflight.companions.has_value() && !preflight.companions->safe();
+}
+
 class TemporaryDirectory {
 public:
     explicit TemporaryDirectory(std::filesystem::path path)
@@ -597,8 +604,10 @@ std::string_view to_string(ConversionErrorCode code) noexcept {
     case ConversionErrorCode::unsupported_source_format: return "unsupported_source_format";
     case ConversionErrorCode::route_not_enabled: return "route_not_enabled";
     case ConversionErrorCode::route_feature_unverified: return "route_feature_unverified";
+    case ConversionErrorCode::companion_resolution_failed: return "companion_resolution_failed";
     case ConversionErrorCode::output_root_error: return "output_root_error";
     case ConversionErrorCode::import_failed: return "import_failed";
+    case ConversionErrorCode::texture_embedding_failed: return "texture_embedding_failed";
     case ConversionErrorCode::export_failed: return "export_failed";
     case ConversionErrorCode::reimport_failed: return "reimport_failed";
     case ConversionErrorCode::validation_failed: return "validation_failed";
@@ -659,12 +668,17 @@ ConversionReport AssetConverter::convert(
     }
     if (report.preflight->decision.overall_result != OverallResult::safe) {
         const bool feature_block = contains_route_feature_block(*report.preflight);
+        const bool companion_block = contains_companion_block(*report.preflight);
         set_error(
             report,
-            feature_block
+            companion_block
+                ? ConversionErrorCode::companion_resolution_failed
+                : feature_block
                 ? ConversionErrorCode::route_feature_unverified
                 : ConversionErrorCode::route_not_enabled,
-            feature_block
+            companion_block
+                ? "Companion-file validation blocked the requested conversion."
+                : feature_block
                 ? "The source contains a feature outside the verified OBJ to GLB2 boundary."
                 : "Conversion preflight blocked the requested route.",
             total_start);
@@ -744,8 +758,10 @@ ConversionReport AssetConverter::convert(
     const auto temporary_glb = temporary.path() / (stem.native() + L".glb");
 
     report.processing_steps = {
+        "ResolveCompanionFiles",
         "aiProcess_Triangulate",
-        "aiProcess_ValidateDataStructure"
+        "aiProcess_ValidateDataStructure",
+        "EmbedBaseColorTextures"
     };
     if (progress) progress(ConversionStage::importing);
     const auto import_start = Clock::now();
@@ -759,6 +775,26 @@ ConversionReport AssetConverter::convert(
             report,
             ConversionErrorCode::import_failed,
             "Assimp source import failed: " + std::string(source_importer.GetErrorString()),
+            total_start);
+        return report;
+    }
+    if (!report.preflight->companions.has_value()) {
+        set_error(
+            report,
+            ConversionErrorCode::companion_resolution_failed,
+            "OBJ companion-file analysis was not available for conversion.",
+            total_start);
+        return report;
+    }
+    if (progress) progress(ConversionStage::embedding_textures);
+    const auto embedding = embed_base_color_textures(
+        *const_cast<aiScene*>(source_scene),
+        *report.preflight->companions);
+    if (!embedding) {
+        set_error(
+            report,
+            ConversionErrorCode::texture_embedding_failed,
+            "Texture embedding failed: " + embedding.error,
             total_start);
         return report;
     }
@@ -799,6 +835,26 @@ ConversionReport AssetConverter::convert(
         return report;
     }
 
+    if (progress) progress(ConversionStage::validating_textures);
+    const auto container_validation = validate_glb_container(
+        temporary_glb,
+        *report.preflight->companions);
+    for (const auto& check : container_validation.checks) {
+        report.validation_checks.push_back({
+            check.name,
+            check.passed,
+            check.details
+        });
+    }
+    if (!container_validation) {
+        set_error(
+            report,
+            ConversionErrorCode::validation_failed,
+            "Generated GLB container validation failed: " + container_validation.error,
+            total_start);
+        return report;
+    }
+
     if (progress) progress(ConversionStage::reimporting);
     const auto reimport_start = Clock::now();
     Assimp::Importer output_importer;
@@ -829,10 +885,14 @@ ConversionReport AssetConverter::convert(
         return report;
     }
     report.output_analysis = output_analysis.analysis;
-    report.validation_checks = validate_round_trip(
+    auto round_trip_checks = validate_round_trip(
         *report.source_analysis,
         *report.output_analysis,
         temporary_glb);
+    report.validation_checks.insert(
+        report.validation_checks.end(),
+        std::make_move_iterator(round_trip_checks.begin()),
+        std::make_move_iterator(round_trip_checks.end()));
     report.timings.validation_ms = elapsed_ms(validation_start);
     if (!all_checks_pass(report.validation_checks)) {
         set_error(

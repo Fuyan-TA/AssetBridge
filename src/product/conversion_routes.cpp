@@ -22,6 +22,7 @@ std::vector<ConversionRoute> make_registry() {
         for (const auto target : all_formats) {
             const bool verified_obj_to_glb =
                 source == FormatId::obj && target == FormatId::glb2;
+            const bool verified_textured_obj_to_glb = verified_obj_to_glb;
             routes.push_back({
                 source,
                 target,
@@ -37,10 +38,14 @@ std::vector<ConversionRoute> make_registry() {
                     }
                     : std::vector<AssetFeature> {},
                 {
-                    { RouteFeature::multiple_referenced_materials, false, false },
-                    { RouteFeature::base_color_texture, false, false },
-                    { RouteFeature::embedded_base_color_texture, false, false },
-                    { RouteFeature::shared_texture_deduplication, false, false }
+                    { RouteFeature::multiple_referenced_materials,
+                        verified_textured_obj_to_glb, verified_textured_obj_to_glb },
+                    { RouteFeature::base_color_texture,
+                        verified_textured_obj_to_glb, verified_textured_obj_to_glb },
+                    { RouteFeature::embedded_base_color_texture,
+                        verified_textured_obj_to_glb, verified_textured_obj_to_glb },
+                    { RouteFeature::shared_texture_deduplication,
+                        verified_textured_obj_to_glb, verified_textured_obj_to_glb }
                 }
             });
         }
