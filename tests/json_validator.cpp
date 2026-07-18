@@ -859,12 +859,12 @@ int wmain(int argc, wchar_t* argv[]) {
                 std::filesystem::path(argv[4]));
         } else if (mode == L"preflight_glb_multi") {
             require(argc == 5, "preflight_glb_multi requires input and text files");
-            const auto input = std::filesystem::path(argv[3]);
+            const auto preflight_input = std::filesystem::path(argv[3]);
             const auto expected_referenced_material_count =
-                input.filename() == L"texture_behavior.obj" ? 2ULL : 1ULL;
+                preflight_input.filename() == L"texture_behavior.obj" ? 2ULL : 1ULL;
             validate_preflight_success(
                 report,
-                input,
+                preflight_input,
                 "glb2",
                 "safe",
                 "safe",
