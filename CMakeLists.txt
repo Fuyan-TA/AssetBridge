@@ -156,6 +156,17 @@ add_executable(assetbridge-conversion-tests
 target_link_libraries(assetbridge-conversion-tests PRIVATE assetbridge-core assimp::assimp)
 target_compile_options(assetbridge-conversion-tests PRIVATE /W4 /permissive- /utf-8)
 
+add_executable(assetbridge-assimp-texture-probe-tests
+    tests/assimp_texture_probe_tests.cpp
+)
+
+target_link_libraries(assetbridge-assimp-texture-probe-tests
+    PRIVATE
+        assimp::assimp
+        nlohmann_json::nlohmann_json
+)
+target_compile_options(assetbridge-assimp-texture-probe-tests PRIVATE /W4 /permissive- /utf-8)
+
 add_executable(assetbridge-desktop-state-tests
     tests/desktop_app_state_tests.cpp
 )
@@ -177,6 +188,14 @@ add_test(
         "${CMAKE_CURRENT_SOURCE_DIR}/tests/assets"
         "${CMAKE_CURRENT_BINARY_DIR}/conversion-core-output"
 )
+
+add_test(
+    NAME assetbridge-assimp-texture-probe
+    COMMAND assetbridge-assimp-texture-probe-tests
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/textured/probe"
+        "${CMAKE_CURRENT_BINARY_DIR}/assimp-texture-probe-output"
+)
+set_tests_properties(assetbridge-assimp-texture-probe PROPERTIES TIMEOUT 60)
 
 add_test(NAME assetbridge-scene-semantics COMMAND assetbridge-scene-semantics-tests)
 set_tests_properties(assetbridge-scene-semantics PROPERTIES
@@ -472,6 +491,7 @@ set_tests_properties(
     assetbridge-capability-matrix
     assetbridge-conversion-routes
     assetbridge-conversion-core
+    assetbridge-assimp-texture-probe
     assetbridge-scene-semantics
     PROPERTIES LABELS "unit"
 )
