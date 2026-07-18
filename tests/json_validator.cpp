@@ -184,7 +184,8 @@ std::string read_text_file(const std::filesystem::path& path) {
 
 void validate_preflight_features(
     const Json& features,
-    std::uint64_t expected_mesh_count) {
+    std::uint64_t expected_mesh_count,
+    std::uint64_t expected_referenced_material_count) {
     require_exact_keys(features, {
         "mesh_count",
         "has_node_hierarchy",
@@ -232,7 +233,9 @@ void validate_preflight_features(
         features.at("meshes_with_normals") == expected_mesh_count,
         "preflight normal count mismatch");
     require(features.at("max_uv_channel_count") == 1, "preflight UV count mismatch");
-    require(features.at("referenced_material_count") == 1, "referenced material count mismatch");
+    require(
+        features.at("referenced_material_count") == expected_referenced_material_count,
+        "referenced material count mismatch");
     require(features.at("animation_count") == 0, "OBJ must not invent animations");
     require(features.at("bone_count") == 0, "OBJ must not invent bones");
     require(features.at("morph_target_count") == 0, "OBJ must not invent morph targets");
@@ -278,7 +281,8 @@ void validate_preflight_success(
     bool expected_product_enabled,
     bool expected_verified,
     const std::filesystem::path& text_path,
-    std::uint64_t expected_mesh_count = 1) {
+    std::uint64_t expected_mesh_count = 1,
+    std::uint64_t expected_referenced_material_count = 1) {
     require_exact_keys(report, {
         "schema",
         "status",
@@ -336,7 +340,10 @@ void validate_preflight_success(
         "target route product_enabled mismatch");
     require(target.at("verified") == expected_verified, "target route verified mismatch");
 
-    validate_preflight_features(report.at("features"), expected_mesh_count);
+    validate_preflight_features(
+        report.at("features"),
+        expected_mesh_count,
+        expected_referenced_material_count);
     const auto& companions = report.at("companions");
     require_exact_keys(companions, {
         "resolved",
@@ -357,6 +364,9 @@ void validate_preflight_success(
     }
     require(companions.at("textures").is_array(), "companion textures must be an array");
     require(companions.at("issues").is_array(), "companion issues must be an array");
+    require(
+        companions.at("referenced_material_count") == expected_referenced_material_count,
+        "companion referenced material count mismatch");
     validate_assessments(report.at("assessments"));
     const auto loss_codes = validate_losses(report.at("losses"));
 
@@ -849,16 +859,20 @@ int wmain(int argc, wchar_t* argv[]) {
                 std::filesystem::path(argv[4]));
         } else if (mode == L"preflight_glb_multi") {
             require(argc == 5, "preflight_glb_multi requires input and text files");
+            const auto input = std::filesystem::path(argv[3]);
+            const auto expected_referenced_material_count =
+                input.filename() == L"texture_behavior.obj" ? 2ULL : 1ULL;
             validate_preflight_success(
                 report,
-                std::filesystem::path(argv[3]),
+                input,
                 "glb2",
                 "safe",
                 "safe",
                 true,
                 true,
                 std::filesystem::path(argv[4]),
-                2);
+                2,
+                expected_referenced_material_count);
         } else if (mode == L"preflight_unknown") {
             require(argc == 4, "preflight_unknown requires the requested input file");
             validate_unknown_target(report);
