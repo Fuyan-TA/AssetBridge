@@ -49,11 +49,13 @@ add_library(assetbridge-core STATIC
     src/core/asset_inspector.cpp
     src/core/companion_resolver.cpp
     src/core/conversion_serializer.cpp
+    src/core/glb_container.cpp
     src/core/preflight_report.cpp
     src/core/preflight_serializer.cpp
     src/core/report_serializer.cpp
     src/core/runtime_capabilities.cpp
     src/core/scene_analysis.cpp
+    src/core/texture_embedder.cpp
 )
 
 target_include_directories(assetbridge-core
@@ -174,6 +176,12 @@ add_executable(assetbridge-companion-resolver-tests
 target_link_libraries(assetbridge-companion-resolver-tests PRIVATE assetbridge-core)
 target_compile_options(assetbridge-companion-resolver-tests PRIVATE /W4 /permissive- /utf-8)
 
+add_executable(assetbridge-texture-pipeline-tests
+    tests/texture_pipeline_tests.cpp
+)
+target_link_libraries(assetbridge-texture-pipeline-tests PRIVATE assetbridge-core assimp::assimp)
+target_compile_options(assetbridge-texture-pipeline-tests PRIVATE /W4 /permissive- /utf-8)
+
 add_executable(assetbridge-desktop-state-tests
     tests/desktop_app_state_tests.cpp
 )
@@ -211,6 +219,14 @@ add_test(
         "${CMAKE_CURRENT_BINARY_DIR}/companion-resolver-output"
 )
 set_tests_properties(assetbridge-companion-resolver PROPERTIES TIMEOUT 60)
+
+add_test(
+    NAME assetbridge-texture-pipeline
+    COMMAND assetbridge-texture-pipeline-tests
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/textured/probe"
+        "${CMAKE_CURRENT_BINARY_DIR}/texture-pipeline-output"
+)
+set_tests_properties(assetbridge-texture-pipeline PROPERTIES TIMEOUT 90)
 
 add_test(NAME assetbridge-scene-semantics COMMAND assetbridge-scene-semantics-tests)
 set_tests_properties(assetbridge-scene-semantics PROPERTIES
@@ -508,6 +524,7 @@ set_tests_properties(
     assetbridge-conversion-core
     assetbridge-assimp-texture-probe
     assetbridge-companion-resolver
+    assetbridge-texture-pipeline
     assetbridge-scene-semantics
     PROPERTIES LABELS "unit"
 )
