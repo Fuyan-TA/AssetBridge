@@ -4,25 +4,51 @@ All notable changes to AssetBridge are documented here.
 
 ## [Unreleased]
 
+No product capability is currently scheduled for this section.
+
+## [0.2.0] - 2026-07-19
+
 ### Added
 
-- Candidate verified support for multiple mesh-referenced OBJ materials,
-  per-material Kd colors, and one local PNG/JPEG `map_Kd` per material.
-- Asset-root-bounded companion-file resolver with stable path, signature,
-  semantic, transparency, and resource-limit errors.
-- Explicit Assimp `aiTexture` embedding with shared-image deduplication and
-  original compressed-byte preservation.
-- GLB v2 JSON/BIN container validation for embedded images, material/texture
-  bindings, bufferView bounds, signatures, and local-path leakage.
-- Compatible texture diagnostics in preflight/conversion JSON, CLI text, and
-  the desktop interface.
+- Verified multi-material OBJ→GLB2 conversion within the documented static-mesh
+  route boundary.
+- One Base Color `map_Kd` image per mesh-referenced material, accepting PNG,
+  JPEG, and JPG file extensions when the file signature matches.
+- Explicit embedding of original compressed image bytes in GLB BIN
+  `bufferView` entries, with shared-image deduplication across materials.
+- Unicode and space-containing OBJ, MTL, texture, and output paths.
+- Asset-root-bounded companion-file resolution with stable diagnostics.
+- GLB v2 JSON/BIN validation for embedded images, material/texture bindings,
+  `bufferView` bounds, signatures, and exact source-byte preservation.
+- Texture diagnostics and Resolving, Embedding, and Validating stages in the
+  desktop conversion flow.
 
-### Still unsupported
+### Security / Safety
 
-- Transparency and alpha semantics, texture options/transforms, non-Base-Color
-  texture semantics, image conversion, and network/Data URI inputs.
-- Meaningful hierarchy, instancing, multiple UV channels, vertex colors,
-  unverified tangent/PBR data, and character data.
+- Reject absolute paths, UNC paths, URLs, and Data URIs.
+- Reject normalized `../` paths that escape the OBJ asset root.
+- Check canonical paths and Windows reparse points before accepting companions.
+- Validate image file signatures against PNG/JPEG extensions.
+- Enforce per-image, unique-image-count, and aggregate image-byte limits.
+
+### Still Unsupported
+
+- Alpha and transparency semantics, including `d`, `Tr`, and `map_d`.
+- Normal and bump maps.
+- Metallic, roughness, specular, emissive, and opacity textures.
+- `map_Kd` transform, option, and clamp semantics.
+- Image transcoding or resampling.
+- Meaningful hierarchy, instancing, multiple UV channels, vertex colors, and
+  unverified tangent/PBR data.
+- Bones, skin weights, animation, and morph targets.
+- Other conversion formats and `--allow-lossy`.
+
+### Platform Notice
+
+- Windows x64 portable ZIP only.
+- Binaries are not Authenticode-signed. Smart App Control or Microsoft Defender
+  may warn about or block newly generated unsigned executables.
+- SHA-256 verifies archive integrity; it is not a code-signing identity proof.
 
 ## [0.1.0] - 2026-07-15
 

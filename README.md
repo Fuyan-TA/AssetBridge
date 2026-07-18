@@ -7,7 +7,7 @@ performing a narrow, validated OBJ-to-GLB conversion workflow. It is designed
 around explicit format capabilities, preflight diagnostics, transactional
 output, and round-trip verification.
 
-AssetBridge v0.1.0 is not a general-purpose all-format converter and makes no
+AssetBridge v0.2.0 is not a general-purpose all-format converter and makes no
 readiness claim beyond its verified boundary. The product exposes only the
 OBJ-to-GLB route that has automated and local acceptance evidence.
 
@@ -15,53 +15,38 @@ OBJ-to-GLB route that has automated and local acceptance evidence.
 
 Local file-system paths are redacted in documentation screenshots.
 
-## v0.2 development status
+## v0.2.0 verified scope
 
-The current development branch extends only the verified OBJ-to-GLB2 route.
-It resolves mesh-referenced MTL materials and local `map_Kd` images, explicitly
-embeds PNG/JPEG compressed bytes in the GLB BIN chunk, and validates the GLB
-container before the existing Assimp reimport and geometry checks. Multiple
-referenced materials, per-material Kd colors, distinct images, and shared-image
-deduplication are covered by self-authored fixtures.
+| Area | Verified v0.2.0 boundary |
+|---|---|
+| Platform | Native Windows x64 desktop and CLI applications. |
+| Route | OBJ/MTL input to binary GLB2 output only. |
+| Geometry | One static mesh or multiple non-empty flat static meshes; controlled triangulation of non-triangle faces. |
+| Attributes | Vertex positions, normals, and UV0 when present in the source. |
+| Materials | Multiple mesh-referenced MTL materials with per-material Kd color. |
+| Images | One Base Color `map_Kd` PNG/JPEG/JPG per referenced material; original compressed bytes embedded in GLB BIN `bufferView` entries. |
+| Deduplication | A shared source image referenced by multiple materials is embedded once. |
+| Paths | UTF-16 Windows input/output boundary and UTF-8 JSON, including Chinese and space-containing paths. |
+| Safety | Asset-root-bounded companion resolution, transactional output, GLB structure checks, Assimp reimport, and validation before commit. |
 
-Companion files are restricted to the OBJ directory tree. Absolute paths, UNC
-paths, URLs, normalized `../` escapes, missing files, non-regular files,
-unsupported extensions, signature mismatches, transparency, map options, and
-non-Base-Color texture semantics produce stable blocking diagnostics. This
-scope does not include normal, bump, opacity, metallic, roughness, specular, or
-emissive textures; image transcoding; texture transforms; or alpha semantics.
+The final GLB does not depend on external image files. Companion MTL and image
+files must resolve inside the OBJ asset-root directory tree. Absolute paths,
+UNC paths, URLs, Data URIs, normalized `../` escapes, reparse-point escapes,
+missing/non-regular files, extension/signature mismatches, unsupported semantics,
+and resource-limit violations block conversion with stable diagnostics.
 
-This is unreleased development work. The published v0.1.0 package and tag are
-unchanged.
-
-## v0.1.0 scope
-
-The verified product scope is:
-
-- Windows x64 native desktop and command-line applications.
-- OBJ and MTL input, with GLB output.
-- One static mesh or multiple non-empty static meshes represented by flat,
-  identity sibling nodes.
-- Vertex positions, normals, UV0, and the currently verified single referenced
-  material with MTL diffuse color.
-- Controlled triangulation of non-triangle faces during export preparation.
-- UTF-16 Windows command-line paths and UTF-8 JSON, including Chinese OBJ, MTL,
-  and output paths.
-- GUI drag-and-drop, inspection, preflight diagnostics, and conversion.
-- Transactional per-asset output, GLB reimport, validation checks, and a JSON
-  conversion report.
-
-The following remain outside the verified v0.1.0 boundary and are rejected when
+The following remain outside the verified v0.2.0 boundary and are rejected when
 detected:
 
-- External or embedded textures.
-- Multiple referenced-material semantics beyond the current single-material
-  commitment.
+- Alpha and transparency semantics: `d`, `Tr`, and `map_d`.
+- Normal and bump maps.
+- Metallic, roughness, specular, emissive, and opacity textures.
+- `map_Kd` transform, option, and clamp semantics.
+- Image transcoding or resampling.
 - Meaningful node hierarchy, non-identity node transforms, or mesh instancing.
 - Multiple UV channels, vertex colors, tangents, or unverified PBR data.
 - Bones, skin weights, animation, or morph targets.
-- Other input or output formats, even when the bundled Assimp build exposes a
-  corresponding importer or exporter.
+- Other input or output formats and `--allow-lossy`.
 
 ## Quick start
 
@@ -74,7 +59,7 @@ detected:
 5. Choose an output directory and select **Convert to GLB**.
 6. After successful reimport validation, open the output folder or JSON report.
 
-The MVP accepts one OBJ at a time. Dropping multiple files or a non-OBJ file is
+AssetBridge accepts one OBJ at a time. Dropping multiple files or a non-OBJ file is
 rejected before conversion.
 
 ### CLI
@@ -143,7 +128,7 @@ cmake --build --preset msvc-release --target package
 ```
 
 Outputs are written below `out/build/msvc-release/packages/`. CMake project
-version `0.1.0` is the authoritative version source; a configured header feeds
+version `0.2.0` is the authoritative version source; a configured header feeds
 the CLI and desktop UI.
 
 ## Validation model
@@ -152,8 +137,11 @@ The conversion path inspects the original asset, runs product preflight, builds
 an export-ready triangulated scene, exports GLB, reimports it, and compares the
 result before committing output. Mesh count, triangle count, index validity,
 whole-scene and per-mesh AABBs, normal/UV0 presence, and the verified material
-data are checked. Vertex count is diagnostic because legal triangulation and
-format representation can change vertex splitting.
+data are checked. For textured assets, AssetBridge also validates GLB JSON/BIN
+structure, image `bufferView` bounds, material/texture bindings, image
+signatures, absence of external image URIs, and exact preservation of the
+source compressed image bytes. Vertex count is diagnostic because legal
+triangulation and format representation can change vertex splitting.
 
 See [Architecture](docs/ARCHITECTURE.md) and
 [Validation Pipeline](docs/VALIDATION_PIPELINE.md) for the engineering details.
@@ -163,29 +151,33 @@ See [Architecture](docs/ARCHITECTURE.md) and
 These are measurements, not cross-machine guarantees. No system cache was
 cleared and no Windows security policy was changed.
 
-| Metric | v0.1.0 measurement |
-|---|---:|
-| Desktop EXE | 745,984 bytes |
-| CLI EXE | 376,320 bytes |
-| Portable directory | 10,363,188 bytes |
-| ZIP | 4,347,762 bytes |
-| First measured launch to responsive window | 215.983 ms |
-| Cached launch median, 5 runs | 183.421 ms |
-| Idle Working Set median, 5 runs | 71,897,088 bytes (68.57 MiB) |
+| Metric | v0.1.0 recorded | v0.2.0 candidate | Change |
+|---|---:|---:|---:|
+| Desktop EXE | 745,984 bytes | 865,792 bytes | +119,808 bytes |
+| CLI EXE | 376,320 bytes | 496,640 bytes | +120,320 bytes |
+| DLL count | 11 | 11 | 0 |
+| Portable directory | 10,363,188 bytes | 10,603,313 bytes | +240,125 bytes |
+| ZIP | 4,347,759 bytes | 4,461,429 bytes | +113,670 bytes |
+| First measured launch to responsive window | 215.983 ms | 247.930 ms | +31.947 ms |
+| Cached launch median, 5 runs | 183.421 ms | 170.737 ms | -12.684 ms |
+| Idle Working Set median, 5 runs | 71,897,088 bytes | 71,917,568 bytes (68.59 MiB) | +20,480 bytes |
+| Idle Private Memory median, 5 runs | Not recorded | 79,364,096 bytes (75.69 MiB) | Not comparable |
 
-Measurement machine: AMD Ryzen 5 9600X, 12 logical processors, Windows 11 Pro
-10.0.26200. Launch timing is measured from process creation until a responsive
-main window exists. Idle Working Set is sampled 1.5 seconds after that point
-with no asset loaded. The source state is the `release/v0.1.0` preparation tree;
-the commit containing this table is the release evidence commit, based on merge
-commit `3647bddee68eede93f36b00bc78dd3fbafd5e6d5`.
+Measurement machine: AMD Ryzen 5 9600X, 12 logical processors, Windows build
+10.0.26200.8875. Launch timing is measured from process creation until a
+responsive main window exists. Idle memory is sampled 1.5 seconds after that
+point with no asset loaded. The v0.2.0 measurement state is the
+`release/v0.2.0` preparation tree based on merge commit
+`5e638a19638f8fdb5bfc9d1d0527d36e77ad410d`. The v0.1.0 ZIP size is the
+published Release asset size; the other v0.1.0 values are retained release
+evidence.
 
 The complete DLL and validation evidence is summarized in the
 [portfolio case study](docs/PORTFOLIO_CASE_STUDY.md).
 
 ## Unsigned Windows build
 
-The v0.1.0 portable preview is not Authenticode-signed. Some Windows security
+The v0.2.0 portable build is not Authenticode-signed. Some Windows security
 policies may block unsigned executables. AssetBridge does not recommend turning
 off or bypassing Smart App Control, antivirus software, or organizational code
 integrity policy. If execution is blocked, inspect the source and build it
@@ -196,11 +188,16 @@ identity signature and does not replace code signing.
 
 ## Documentation
 
+- [v0.2.0 Release Notes](docs/RELEASE_NOTES_v0.2.0.md)
 - [Architecture](docs/ARCHITECTURE.md)
 - [Validation Pipeline](docs/VALIDATION_PIPELINE.md)
 - [Portfolio Case Study](docs/PORTFOLIO_CASE_STUDY.md)
 - [Contributing](CONTRIBUTING.md)
 - [Changelog](CHANGELOG.md)
+
+The published [v0.1.0 release](https://github.com/Fuyan-TA/AssetBridge/releases/tag/v0.1.0)
+is retained as the previous public version. This preparation does not add a
+v0.2.0 Release URL before such a Release exists.
 
 ## License
 
