@@ -1,0 +1,3 @@
+newmtl UnsupportedSemanticMaterial
+Kd 1 1 1
+map_Bump normal.png

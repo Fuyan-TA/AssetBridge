@@ -85,6 +85,35 @@ Conversion evidence compares the export-ready scene with the reimported GLB:
 mesh count, per-mesh and total triangles, index validity, finite data, scene and
 per-mesh AABBs, normals, UV0, referenced material presence, and diffuse color.
 
+## v0.2 Textured-Asset Extension
+
+OBJ texture support required a different reliability boundary from geometry.
+An MTL can point at files outside the asset directory, use unsupported map
+options, or describe texture semantics that the current route does not promise.
+Assimp 6.0.4 also does not automatically turn imported external `map_Kd`
+references into GLB-embedded images. Treating exporter success as proof of a
+self-contained asset would therefore be incorrect.
+
+The v0.2 development path resolves only mesh-used materials, restricts MTL and
+image access to the OBJ directory tree, validates PNG/JPEG signatures and
+resource limits, and blocks transparency or non-Base-Color semantics. Core then
+creates compressed `aiTexture` payloads explicitly and rewrites material
+references before export. The GLB validator verifies bufferView embedding,
+material-to-image binding, shared-image deduplication, and byte identity. The
+existing geometry and transaction checks remain in place.
+
+This expands one route, not the general format matrix. Normal, bump, opacity,
+metallic, roughness, specular, emissive, transformed, or transcoded textures
+remain unsupported until separate product rules and validation evidence exist.
+
+## Development Method
+
+The implementation was developed with AI-assisted coding under a human-defined
+scope, architecture, acceptance criteria, and release process. Capability claims
+are based on committed fixtures, retained Assimp behavior probes, executable
+validation, and CI logs rather than on generated descriptions. This record does
+not imply a team size or manual implementation process that did not exist.
+
 ## Lightweight Results
 
 Measured on an AMD Ryzen 5 9600X system with Windows 11 Pro 10.0.26200:
@@ -116,8 +145,8 @@ credible only when failure behavior is as deliberate as the success path.
 ## Next Steps
 
 Future work remains gated by new capability rules and test assets rather than
-being implied as current support. Candidate investigations include a licensed
-texture-path/copy policy, Authenticode signing, and additional source formats.
+being implied as current support. Candidate investigations include additional
+texture semantics, Authenticode signing, and additional source formats.
 Each would require its own route commitment, loss rules, fixtures, round-trip
 checks, UI diagnostics, package evidence, and size/performance review before it
 could be marked enabled or verified.

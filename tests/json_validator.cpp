@@ -184,7 +184,8 @@ std::string read_text_file(const std::filesystem::path& path) {
 
 void validate_preflight_features(
     const Json& features,
-    std::uint64_t expected_mesh_count) {
+    std::uint64_t expected_mesh_count,
+    std::uint64_t expected_referenced_material_count) {
     require_exact_keys(features, {
         "mesh_count",
         "has_node_hierarchy",
@@ -232,7 +233,9 @@ void validate_preflight_features(
         features.at("meshes_with_normals") == expected_mesh_count,
         "preflight normal count mismatch");
     require(features.at("max_uv_channel_count") == 1, "preflight UV count mismatch");
-    require(features.at("referenced_material_count") == 1, "referenced material count mismatch");
+    require(
+        features.at("referenced_material_count") == expected_referenced_material_count,
+        "referenced material count mismatch");
     require(features.at("animation_count") == 0, "OBJ must not invent animations");
     require(features.at("bone_count") == 0, "OBJ must not invent bones");
     require(features.at("morph_target_count") == 0, "OBJ must not invent morph targets");
@@ -278,13 +281,15 @@ void validate_preflight_success(
     bool expected_product_enabled,
     bool expected_verified,
     const std::filesystem::path& text_path,
-    std::uint64_t expected_mesh_count = 1) {
+    std::uint64_t expected_mesh_count = 1,
+    std::uint64_t expected_referenced_material_count = 1) {
     require_exact_keys(report, {
         "schema",
         "status",
         "source",
         "target",
         "features",
+        "companions",
         "assessments",
         "losses",
         "compatibility_result",
@@ -335,7 +340,33 @@ void validate_preflight_success(
         "target route product_enabled mismatch");
     require(target.at("verified") == expected_verified, "target route verified mismatch");
 
-    validate_preflight_features(report.at("features"), expected_mesh_count);
+    validate_preflight_features(
+        report.at("features"),
+        expected_mesh_count,
+        expected_referenced_material_count);
+    const auto& companions = report.at("companions");
+    require_exact_keys(companions, {
+        "resolved",
+        "referenced_material_count",
+        "external_texture_reference_count",
+        "resolved_texture_count",
+        "shared_texture_deduplication_count",
+        "texture_bytes",
+        "textures",
+        "issues"
+    });
+    require(companions.at("resolved").is_boolean(), "companion resolved must be boolean");
+    for (const auto field : {
+             "referenced_material_count", "external_texture_reference_count",
+             "resolved_texture_count", "shared_texture_deduplication_count",
+             "texture_bytes" }) {
+        require(companions.at(field).is_number_unsigned(), "companion count must be unsigned");
+    }
+    require(companions.at("textures").is_array(), "companion textures must be an array");
+    require(companions.at("issues").is_array(), "companion issues must be an array");
+    require(
+        companions.at("referenced_material_count") == expected_referenced_material_count,
+        "companion referenced material count mismatch");
     validate_assessments(report.at("assessments"));
     const auto loss_codes = validate_losses(report.at("losses"));
 
@@ -385,6 +416,7 @@ void validate_unknown_target(const Json& report) {
         "source",
         "target",
         "features",
+        "companions",
         "assessments",
         "losses",
         "compatibility_result",
@@ -398,6 +430,7 @@ void validate_unknown_target(const Json& report) {
     require(report.at("source").is_null(), "unknown target source must be null");
     require(report.at("target").is_null(), "unknown target must not have a canonical ID");
     require(report.at("features").is_null(), "unknown target features must be null");
+    require(report.at("companions").is_null(), "unknown target companions must be null");
     require(report.at("assessments").is_array() && report.at("assessments").empty(), "unknown target assessments must be empty");
     const auto codes = validate_losses(report.at("losses"));
     require(codes.size() == 1 && codes.front() == "unknown_target_format", "unknown target loss mismatch");
@@ -420,7 +453,8 @@ std::filesystem::path path_from_utf8(std::string_view value) {
 void validate_conversion_analysis(
     const Json& analysis,
     std::uint64_t expected_mesh_count,
-    std::uint64_t expected_triangle_count) {
+    std::uint64_t expected_triangle_count,
+    std::uint64_t expected_referenced_material_count) {
     require_exact_keys(analysis, {
         "mesh_count",
         "vertex_count",
@@ -441,7 +475,9 @@ void validate_conversion_analysis(
     require(
         analysis.at("triangle_count") == expected_triangle_count,
         "converted triangle count mismatch");
-    require(analysis.at("referenced_material_count") == 1, "referenced material count mismatch");
+    require(
+        analysis.at("referenced_material_count") == expected_referenced_material_count,
+        "referenced material count mismatch");
     require(analysis.at("has_normals") == true, "converted scene must contain normals");
     require(analysis.at("has_uv0") == true, "converted scene must contain UV0");
 
@@ -468,6 +504,8 @@ void validate_conversion_success(const Json& report, const std::filesystem::path
     std::uint64_t expected_source_face_count = 1;
     std::uint64_t expected_source_triangle_faces = 1;
     std::uint64_t expected_export_ready_triangles = 1;
+    std::uint64_t expected_referenced_material_count = 1;
+    std::uint64_t expected_resolved_texture_count = 0;
     double expected_red = 0.8;
     double expected_green = 0.8;
     double expected_blue = 0.8;
@@ -499,6 +537,31 @@ void validate_conversion_success(const Json& report, const std::filesystem::path
         expected_red = 0.125;
         expected_green = 0.5;
         expected_blue = 0.875;
+    } else if (input.filename() == "texture_behavior.obj") {
+        expected_mesh_count = 2;
+        expected_source_face_count = 2;
+        expected_source_triangle_faces = 2;
+        expected_export_ready_triangles = 2;
+        expected_referenced_material_count = 2;
+        expected_resolved_texture_count = 2;
+        expected_red = 1.0;
+        expected_green = 0.25;
+        expected_blue = 0.125;
+    } else if (input.filename() == L"中文材质.obj") {
+        expected_resolved_texture_count = 1;
+        expected_red = 0.3;
+        expected_green = 0.6;
+        expected_blue = 0.9;
+    } else if (input.filename() == "shared_texture.obj") {
+        expected_mesh_count = 2;
+        expected_source_face_count = 2;
+        expected_source_triangle_faces = 2;
+        expected_export_ready_triangles = 2;
+        expected_referenced_material_count = 2;
+        expected_resolved_texture_count = 1;
+        expected_red = 1.0;
+        expected_green = 0.2;
+        expected_blue = 0.2;
     }
 
     require_exact_keys(report, {
@@ -512,6 +575,7 @@ void validate_conversion_success(const Json& report, const std::filesystem::path
         "preflight",
         "processing_steps",
         "output_analysis",
+        "textures",
         "validation_checks",
         "warnings",
         "error",
@@ -563,11 +627,39 @@ void validate_conversion_success(const Json& report, const std::filesystem::path
     validate_conversion_analysis(
         report.at("source_analysis"),
         expected_mesh_count,
-        expected_export_ready_triangles);
+        expected_export_ready_triangles,
+        expected_referenced_material_count);
+    const auto& textures = report.at("textures");
+    require_exact_keys(textures, {
+        "referenced_material_count",
+        "external_texture_reference_count",
+        "resolved_texture_count",
+        "embedded_texture_count",
+        "shared_texture_deduplication_count",
+        "texture_bytes",
+        "issue_codes"
+    });
+    require(textures.at("issue_codes").is_array(), "texture issue codes must be an array");
+    for (const auto field : {
+             "referenced_material_count", "external_texture_reference_count",
+             "resolved_texture_count", "embedded_texture_count",
+             "shared_texture_deduplication_count", "texture_bytes" }) {
+        require(textures.at(field).is_number_unsigned(), "texture diagnostic must be unsigned");
+    }
+    require(
+        textures.at("referenced_material_count") == expected_referenced_material_count,
+        "referenced material diagnostic mismatch");
+    require(
+        textures.at("resolved_texture_count") == expected_resolved_texture_count,
+        "resolved texture diagnostic mismatch");
+    require(
+        textures.at("embedded_texture_count") == expected_resolved_texture_count,
+        "embedded texture diagnostic mismatch");
     validate_conversion_analysis(
         report.at("output_analysis"),
         expected_mesh_count,
-        expected_export_ready_triangles);
+        expected_export_ready_triangles,
+        expected_referenced_material_count);
     require(
         report.at("source_analysis").at("triangle_count")
             == report.at("output_analysis").at("triangle_count"),
@@ -613,7 +705,11 @@ void validate_conversion_success(const Json& report, const std::filesystem::path
     require(preflight.at("verified") == true, "embedded preflight route must be verified");
 
     const auto& steps = report.at("processing_steps");
-    require(steps.is_array() && steps.size() == 2, "processing step list must be exact");
+    require(steps.is_array() && steps.size() == 4, "processing step list must be exact");
+    require(std::find(steps.begin(), steps.end(), "ResolveCompanionFiles") != steps.end(),
+        "companion resolution step must be recorded");
+    require(std::find(steps.begin(), steps.end(), "EmbedBaseColorTextures") != steps.end(),
+        "texture embedding step must be recorded");
     require(std::find(steps.begin(), steps.end(), "aiProcess_Triangulate") != steps.end(),
         "triangulation step must be recorded");
     require(std::find(steps.begin(), steps.end(), "aiProcess_ValidateDataStructure") != steps.end(),
@@ -641,7 +737,9 @@ void validate_conversion_success(const Json& report, const std::filesystem::path
              "aabb_center", "aabb_size", "mesh_matching_strategy",
              "per_mesh_triangle_count", "per_mesh_aabb", "per_mesh_normals",
              "per_mesh_uv0", "per_mesh_material", "normals_preserved",
-             "uv0_preserved", "referenced_material_present", "diffuse_color" }) {
+             "uv0_preserved", "referenced_material_present", "diffuse_color",
+             "glb_header_and_chunks", "embedded_images",
+             "material_texture_bindings", "primitive_material_bindings" }) {
         require(std::find(check_names.begin(), check_names.end(), required) != check_names.end(),
             "required validation check is missing");
     }
@@ -684,6 +782,34 @@ void validate_conversion_error(const Json& report, std::string_view expected_cod
     require(report.at("error").at("message").is_string()
         && !report.at("error").at("message").get<std::string>().empty(),
         "conversion error message must be non-empty");
+}
+
+void validate_conversion_companion_error(
+    const Json& report,
+    const std::filesystem::path& input) {
+    validate_conversion_error(report, "companion_resolution_failed");
+    std::string expected_issue;
+    if (input.filename() == "unverified_texture.obj") {
+        expected_issue = "texture_file_missing";
+    } else if (input.filename() == "path_traversal.obj") {
+        expected_issue = "texture_path_outside_asset_root";
+    } else if (input.filename() == "unsupported_semantic.obj") {
+        expected_issue = "texture_semantic_unverified";
+    } else {
+        throw std::runtime_error("Unknown companion-error fixture");
+    }
+    const auto& losses = report.at("preflight").at("losses");
+    require(
+        std::any_of(losses.begin(), losses.end(), [&](const Json& loss) {
+            return loss.at("code") == expected_issue
+                && loss.at("severity") == "blocking";
+        }),
+        "conversion preflight is missing the stable companion issue code");
+    const auto& issue_codes = report.at("textures").at("issue_codes");
+    require(
+        std::find(issue_codes.begin(), issue_codes.end(), expected_issue)
+            != issue_codes.end(),
+        "conversion texture diagnostics are missing the companion issue code");
 }
 
 } // namespace
@@ -733,16 +859,20 @@ int wmain(int argc, wchar_t* argv[]) {
                 std::filesystem::path(argv[4]));
         } else if (mode == L"preflight_glb_multi") {
             require(argc == 5, "preflight_glb_multi requires input and text files");
+            const auto preflight_input = std::filesystem::path(argv[3]);
+            const auto expected_referenced_material_count =
+                preflight_input.filename() == L"texture_behavior.obj" ? 2ULL : 1ULL;
             validate_preflight_success(
                 report,
-                std::filesystem::path(argv[3]),
+                preflight_input,
                 "glb2",
                 "safe",
                 "safe",
                 true,
                 true,
                 std::filesystem::path(argv[4]),
-                2);
+                2,
+                expected_referenced_material_count);
         } else if (mode == L"preflight_unknown") {
             require(argc == 4, "preflight_unknown requires the requested input file");
             validate_unknown_target(report);
@@ -754,7 +884,7 @@ int wmain(int argc, wchar_t* argv[]) {
             validate_conversion_error(report, "import_failed");
         } else if (mode == L"conversion_unverified") {
             require(argc == 4, "conversion_unverified requires an input file");
-            validate_conversion_error(report, "route_feature_unverified");
+            validate_conversion_companion_error(report, std::filesystem::path(argv[3]));
         } else if (mode == L"conversion_unknown") {
             require(argc == 4, "conversion_unknown requires an input file");
             validate_conversion_error(report, "unknown_target_format");

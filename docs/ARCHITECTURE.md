@@ -1,7 +1,7 @@
 # Architecture
 
 AssetBridge is organized so that desktop presentation cannot become the owner
-of conversion policy. The v0.1.0 boundary remains a product decision expressed
+of conversion policy. The verified boundary remains a product decision expressed
 in data and tests, not an accidental consequence of what Assimp can parse.
 
 ```mermaid
@@ -10,6 +10,8 @@ flowchart TD
     CLI["CLI"] --> Core["assetbridge-core<br/>inspect, preflight orchestration, convert, validate"]
     DesktopModel --> Core
     Core --> Product["assetbridge-product<br/>format capabilities and route registry"]
+    Core --> Companion["Companion resolver<br/>MTL and texture security boundary"]
+    Core --> Container["GLB container validator<br/>JSON + BIN evidence"]
     Core --> Assimp["Assimp runtime<br/>import and GLB export"]
     Desktop --> Platform["platform/windows<br/>UTF conversion, dialogs, Shell API"]
 ```
@@ -27,12 +29,31 @@ v0.1.0, OBJ→GLB2 is the only enabled and verified route. Multiple flat static
 meshes are verified; meaningful hierarchy and instancing remain separate
 blocking features.
 
+The v0.2 development registry adds four route-level facts only for OBJ→GLB2:
+multiple referenced materials, Base Color textures, embedded Base Color images,
+and shared-image deduplication. External-texture assessment additionally
+requires Core evidence that companion analysis completed; runtime exporter
+availability alone cannot satisfy this condition.
+
 ### Core
 
 `assetbridge-core` owns filesystem-path inspection, Assimp scene analysis,
 preflight report creation, conversion transactions, export-ready snapshots,
+companion resolution, explicit texture embedding, GLB container inspection,
 round-trip validation, and text/JSON serialization. It has no GUI dependency
 and can be called directly by the CLI or desktop worker.
+
+The OBJ companion resolver evaluates only materials referenced by source
+meshes. `map_Kd` paths are resolved relative to the declaring MTL, but every MTL
+and image must remain inside the OBJ directory after lexical and canonical path
+checks. The resolver validates file type, PNG/JPEG signatures, transparency and
+unsupported semantics, and named resource limits before any output transaction.
+
+Assimp's runtime exporter is not trusted to discover or embed external files.
+Core creates compressed `aiTexture` entries from the resolver's bounded byte
+payloads and rewrites verified material references to `*N`. A separate GLB
+container validator checks JSON/BIN structure and exact image bytes before the
+normal Assimp reimport path.
 
 ### Desktop and platform
 

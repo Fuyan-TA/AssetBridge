@@ -1,0 +1,7 @@
+newmtl PngMaterial
+Kd 1.0 0.25 0.125
+map_Kd textures/probe_rgb.png
+
+newmtl JpegMaterial
+Kd 0.125 0.25 1.0
+map_Kd textures/probe_rgb.jpg

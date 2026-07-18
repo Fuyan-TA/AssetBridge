@@ -88,8 +88,11 @@ std::string_view stage_name(assetbridge::ConversionStage stage) {
     using assetbridge::ConversionStage;
     switch (stage) {
     case ConversionStage::preflight: return "preflight";
+    case ConversionStage::resolving_companions: return "resolving_companions";
     case ConversionStage::importing: return "importing";
+    case ConversionStage::embedding_textures: return "embedding_textures";
     case ConversionStage::exporting: return "exporting";
+    case ConversionStage::validating_textures: return "validating_textures";
     case ConversionStage::reimporting: return "reimporting";
     case ConversionStage::validating: return "validating";
     case ConversionStage::committing: return "committing";
@@ -319,6 +322,36 @@ int wmain(int argc, wchar_t* argv[]) {
             && unicode_multi.output_analysis->mesh_count == 2,
         "Unicode OBJ/MTL multi-mesh conversion should preserve two meshes");
 
+    const auto textured = run_conversion(
+        "textured_distinct_png_jpeg",
+        source_root / "textured" / "probe" / "texture_behavior.obj");
+    failures += require(
+        textured && textured.output_analysis
+            && textured.output_analysis->mesh_count == 2,
+        "verified PNG/JPEG multi-material OBJ should convert without merging meshes");
+    failures += require(
+        has_passed_check(textured, "embedded_images")
+            && has_passed_check(textured, "material_texture_bindings")
+            && has_passed_check(textured, "primitive_material_bindings"),
+        "textured conversion must pass GLB container and material-binding validation");
+
+    const auto unicode_textured = run_conversion(
+        "textured_unicode_paths",
+        source_root / "textured" / "probe" / L"中文路径" / L"中文材质.obj");
+    failures += require(
+        unicode_textured
+            && has_passed_check(unicode_textured, "embedded_images"),
+        "Unicode OBJ, MTL, and PNG companion paths should convert with embedded bytes");
+
+    const auto shared_texture = run_conversion(
+        "textured_shared_image_deduplication",
+        source_root / "textured" / "verified" / "shared_texture.obj");
+    failures += require(
+        shared_texture
+            && has_passed_check(shared_texture, "material_texture_bindings")
+            && has_passed_check(shared_texture, "primitive_material_bindings"),
+        "two materials sharing one PNG should preserve bindings and deduplicate the image");
+
     const auto empty_mesh = run_conversion(
         "reject_empty_mesh",
         source_root / "empty_mesh.obj");
@@ -336,12 +369,12 @@ int wmain(int argc, wchar_t* argv[]) {
         "invalid OBJ must not leave a final directory");
 
     const auto unverified = run_conversion(
-        "reject_unverified_texture",
+        "reject_missing_texture",
         source_root / "unverified_texture.obj");
-    failures += require(!unverified, "unverified texture feature should block conversion");
+    failures += require(!unverified, "missing texture companion should block conversion");
     failures += require(
-        unverified.error_code == ConversionErrorCode::route_feature_unverified,
-        "unverified texture should return route_feature_unverified");
+        unverified.error_code == ConversionErrorCode::companion_resolution_failed,
+        "missing texture should return companion_resolution_failed");
     failures += require(
         !std::filesystem::exists(output_root / "unverified_texture"),
         "blocked feature must not leave a final directory");

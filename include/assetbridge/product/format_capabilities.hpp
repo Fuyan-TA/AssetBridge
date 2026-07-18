@@ -67,6 +67,10 @@ struct AssetFeatures {
     std::uint32_t max_uv_channel_count = 0;
     std::uint64_t meshes_with_vertex_colors = 0;
     std::uint64_t referenced_material_count = 0;
+    // Names are collected only from materials referenced by non-null meshes.
+    // They allow Core companion resolution without broadening support based on
+    // unused MTL declarations.
+    std::vector<std::string> referenced_material_names;
     bool has_pbr_materials = false;
     std::vector<std::string> external_texture_references;
     std::uint64_t embedded_texture_count = 0;

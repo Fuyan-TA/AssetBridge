@@ -1,5 +1,6 @@
 #include "assetbridge/product/loss_preflight.hpp"
 
+#include <iterator>
 #include <string>
 
 namespace assetbridge {
@@ -123,7 +124,8 @@ PreflightDecision evaluate_route_preflight(
     FormatId target,
     const AssetFeatures& source_features,
     bool runtime_exporter_available,
-    bool asset_valid) {
+    bool asset_valid,
+    const RoutePreflightEvidence& evidence) {
     auto decision = evaluate_preflight(
         target,
         source_features,
@@ -135,7 +137,17 @@ PreflightDecision evaluate_route_preflight(
 
     if (route.product_enabled && route.verified && asset_valid) {
         for (auto& assessment : decision.assessments) {
-            if (route_feature_verified(route, assessment.feature)) {
+            const bool companion_verified_external_texture =
+                assessment.feature == AssetFeature::external_textures
+                && evidence.companion_analysis_complete
+                && route_feature_capability(
+                    route,
+                    RouteFeature::base_color_texture).product_enabled
+                && route_feature_capability(
+                    route,
+                    RouteFeature::base_color_texture).verified;
+            if (route_feature_verified(route, assessment.feature)
+                || companion_verified_external_texture) {
                 assessment.support = SupportLevel::supported;
                 assessment.reason = "Feature is verified for this AssetBridge conversion route.";
             } else {
@@ -151,7 +163,11 @@ PreflightDecision evaluate_route_preflight(
             }
         }
 
-        if (source_features.referenced_material_count > 1) {
+        const auto& multiple_materials = route_feature_capability(
+            route,
+            RouteFeature::multiple_referenced_materials);
+        if (source_features.referenced_material_count > 1
+            && (!multiple_materials.product_enabled || !multiple_materials.verified)) {
             decision.losses.push_back({
                 "route_feature_unverified",
                 AssetFeature::material_slots,
@@ -168,6 +184,20 @@ PreflightDecision evaluate_route_preflight(
         decision.product_enabled,
         decision.verified);
     return decision;
+}
+
+void append_preflight_losses(
+    PreflightDecision& decision,
+    std::vector<LossItem> losses) {
+    decision.losses.insert(
+        decision.losses.end(),
+        std::make_move_iterator(losses.begin()),
+        std::make_move_iterator(losses.end()));
+    decision.compatibility_result = compatibility_from(decision.losses);
+    decision.overall_result = overall_from(
+        decision.compatibility_result,
+        decision.product_enabled,
+        decision.verified);
 }
 
 } // namespace assetbridge

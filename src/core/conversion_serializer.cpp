@@ -82,6 +82,28 @@ nlohmann::json paths_to_json(const std::vector<std::filesystem::path>& paths) {
     return result;
 }
 
+nlohmann::json texture_processing_to_json(const ConversionReport& report) {
+    if (!report.preflight.has_value() || !report.preflight->companions.has_value()) {
+        return nullptr;
+    }
+    const auto& companions = *report.preflight->companions;
+    nlohmann::json issue_codes = nlohmann::json::array();
+    for (const auto& issue : companions.issues) {
+        issue_codes.push_back(to_string(issue.code));
+    }
+    return {
+        { "referenced_material_count", companions.referenced_material_count },
+        { "external_texture_reference_count",
+            companions.external_texture_reference_count },
+        { "resolved_texture_count", companions.textures.size() },
+        { "embedded_texture_count", report.embedded_texture_count },
+        { "shared_texture_deduplication_count",
+            companions.shared_texture_deduplication_count },
+        { "texture_bytes", companions.texture_bytes },
+        { "issue_codes", std::move(issue_codes) }
+    };
+}
+
 nlohmann::json report_json(const ConversionReport& report) {
     return {
         { "schema", conversion_schema },
@@ -119,6 +141,7 @@ nlohmann::json report_json(const ConversionReport& report) {
         { "output_analysis", report.output_analysis.has_value()
             ? analysis_to_json(*report.output_analysis)
             : nlohmann::json(nullptr) },
+        { "textures", texture_processing_to_json(report) },
         { "validation_checks", validation_to_json(report.validation_checks) },
         { "warnings", report.warnings },
         { "error", report ? nlohmann::json(nullptr) : nlohmann::json({
@@ -177,6 +200,31 @@ std::string conversion_report_to_text(const ConversionReport& report) {
             << "Output Triangles: " << report.output_analysis->triangle_count << '\n'
             << "Output Vertices (diagnostic): " << report.output_analysis->vertex_count << '\n';
     }
+    if (report.preflight.has_value() && report.preflight->companions.has_value()) {
+        const auto& companions = *report.preflight->companions;
+        std::size_t missing_textures = 0;
+        std::size_t unsupported_semantics = 0;
+        for (const auto& issue : companions.issues) {
+            missing_textures += issue.code == CompanionErrorCode::texture_file_missing ? 1U : 0U;
+            unsupported_semantics +=
+                issue.code == CompanionErrorCode::texture_semantic_unverified
+                    || issue.code == CompanionErrorCode::texture_options_unverified
+                    || issue.code == CompanionErrorCode::transparency_unverified
+                    || issue.code == CompanionErrorCode::multiple_textures_per_material_unverified
+                ? 1U : 0U;
+        }
+        output
+            << "Referenced Materials: " << companions.referenced_material_count << '\n'
+            << "External Texture References: "
+            << companions.external_texture_reference_count << '\n'
+            << "Resolved Textures: " << companions.textures.size() << '\n'
+            << "Embedded Textures: " << report.embedded_texture_count << '\n'
+            << "Shared Texture Deduplications: "
+            << companions.shared_texture_deduplication_count << '\n'
+            << "Missing Textures: " << missing_textures << '\n'
+            << "Unsupported Texture Semantics: " << unsupported_semantics << '\n'
+            << "Texture Bytes: " << companions.texture_bytes << '\n';
+    }
 
     output << "Validation Checks:\n";
     for (const auto& check : report.validation_checks) {
@@ -210,6 +258,7 @@ std::string conversion_argument_error_to_json(
         { "preflight", nullptr },
         { "processing_steps", nlohmann::json::array() },
         { "output_analysis", nullptr },
+        { "textures", nullptr },
         { "validation_checks", nlohmann::json::array() },
         { "warnings", nlohmann::json::array() },
         { "error", { { "code", code }, { "message", message } } },

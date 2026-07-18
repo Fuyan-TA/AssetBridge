@@ -122,6 +122,12 @@ AssetFeatures analyze_scene(const aiScene& scene) {
         if (material == nullptr) {
             continue;
         }
+        aiString material_name;
+        if (material->Get(AI_MATKEY_NAME, material_name) == AI_SUCCESS) {
+            features.referenced_material_names.push_back(assimp_string(material_name));
+        } else {
+            features.referenced_material_names.emplace_back();
+        }
         features.has_pbr_materials =
             features.has_pbr_materials || material_has_pbr_data(*material);
 

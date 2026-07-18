@@ -2,7 +2,9 @@
 #include "assetbridge/product/loss_preflight.hpp"
 
 #include <algorithm>
+#include <array>
 #include <iostream>
+#include <set>
 #include <string_view>
 
 namespace {
@@ -68,6 +70,37 @@ int main() {
             && !route_feature_verified(obj_to_glb, AssetFeature::animations),
         "unverified route features must stay outside the verified feature set");
 
+    constexpr std::array texture_route_features {
+        RouteFeature::multiple_referenced_materials,
+        RouteFeature::base_color_texture,
+        RouteFeature::embedded_base_color_texture,
+        RouteFeature::shared_texture_deduplication
+    };
+    for (const auto& route : routes) {
+        failures += require(
+            route.feature_capabilities.size() == texture_route_features.size(),
+            "every conversion route must define every v0.2 route feature");
+        std::set<RouteFeature> feature_ids;
+        for (const auto& capability : route.feature_capabilities) {
+            feature_ids.insert(capability.feature);
+        }
+        failures += require(
+            feature_ids.size() == texture_route_features.size(),
+            "route feature capabilities must be unique");
+        for (const auto feature : texture_route_features) {
+            const auto& capability = route_feature_capability(route, feature);
+            const bool textured_obj_to_glb =
+                route.source == FormatId::obj && route.target == FormatId::glb2;
+            failures += require(
+                capability.product_enabled == textured_obj_to_glb
+                    && capability.verified == textured_obj_to_glb,
+                "only the verified OBJ to GLB2 route may enable v0.2 texture features");
+            failures += require(
+                to_string(feature) != "unknown",
+                "every route feature must have a stable code");
+        }
+    }
+
     AssetFeatures supported_features;
     supported_features.mesh_count = 1;
     supported_features.meshes_with_normals = 1;
@@ -98,7 +131,33 @@ int main() {
         "external texture should remain blocked for the Phase 4 route");
     failures += require(
         has_route_feature_block(textured, AssetFeature::external_textures),
-        "external texture block should use route_feature_unverified");
+        "external textures without companion evidence must remain blocked");
+
+    const auto resolved_textured = evaluate_route_preflight(
+        FormatId::obj,
+        FormatId::glb2,
+        textured_features,
+        true,
+        true,
+        RoutePreflightEvidence { true });
+    failures += require(
+        resolved_textured.overall_result == OverallResult::safe
+            && !has_route_feature_block(
+                resolved_textured, AssetFeature::external_textures),
+        "completed companion analysis should admit verified base-color textures");
+
+    auto multiple_material_features = textured_features;
+    multiple_material_features.referenced_material_count = 2;
+    const auto multiple_materials = evaluate_route_preflight(
+        FormatId::obj,
+        FormatId::glb2,
+        multiple_material_features,
+        true,
+        true,
+        RoutePreflightEvidence { true });
+    failures += require(
+        multiple_materials.overall_result == OverallResult::safe,
+        "multiple referenced materials with completed companion analysis should be safe");
 
     auto multi_mesh_features = supported_features;
     multi_mesh_features.mesh_count = 2;
@@ -128,6 +187,22 @@ int main() {
     failures += require(
         !obj_to_stl.product_enabled && !obj_to_stl.verified,
         "OBJ to STL must remain disabled and unverified");
+
+    auto appended = supported;
+    append_preflight_losses(appended, {
+        {
+            "texture_file_missing",
+            AssetFeature::external_textures,
+            LossSeverity::blocking,
+            false,
+            "Synthetic missing texture."
+        }
+    });
+    failures += require(
+        appended.compatibility_result == CompatibilityResult::blocked
+            && appended.overall_result == OverallResult::blocked
+            && appended.losses.back().code == "texture_file_missing",
+        "Core-provided companion losses must preserve stable codes and recompute priority");
 
     if (failures == 0) {
         std::cout << "All AssetBridge conversion route tests passed.\n";

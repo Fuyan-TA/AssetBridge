@@ -150,14 +150,12 @@ int main() {
         FormatId::glb2,
         animation_features,
         true);
-    const PreflightReport animation_report {
-        "synthetic_animation.fbx",
-        { std::nullopt, false, false },
-        InspectionErrorCode::none,
-        {},
-        animation_features,
-        animation_decision
-    };
+    PreflightReport animation_report;
+    animation_report.file_path = "synthetic_animation.fbx";
+    animation_report.source = { std::nullopt, false, false };
+    animation_report.error_code = InspectionErrorCode::none;
+    animation_report.features = animation_features;
+    animation_report.decision = animation_decision;
 
     const auto animation_json = nlohmann::json::parse(preflight_to_json(animation_report));
     const auto& animation = animation_json.at("features").at("animations").at(0);

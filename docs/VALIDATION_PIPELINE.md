@@ -5,10 +5,12 @@ extension change or a successful exporter return code.
 
 ```mermaid
 flowchart LR
-    Inspect["Inspect original OBJ"] --> Preflight["Capability and route preflight"]
-    Preflight --> Ready["Build export-ready scene<br/>triangulate + validate structure"]
+    Inspect["Inspect original OBJ"] --> Resolve["Resolve MTL and map_Kd<br/>inside asset root"]
+    Resolve --> Preflight["Capability and route preflight"]
+    Preflight --> Ready["Build export-ready scene<br/>triangulate + embed textures"]
     Ready --> Export["Assimp GLB2 export"]
-    Export --> Reimport["Reimport generated GLB"]
+    Export --> Container["Validate GLB JSON/BIN<br/>and embedded bytes"]
+    Container --> Reimport["Reimport generated GLB"]
     Reimport --> Compare["Geometry and attribute validation"]
     Compare -->|pass| Commit["Write report and atomically commit directory"]
     Compare -->|fail| Rollback["Delete temporary directory"]
@@ -28,6 +30,12 @@ Assimp runtime enumeration. A route is convertible only when it is enabled and
 verified and every detected source feature is inside the tested commitment.
 Unsupported or unverified features produce stable diagnostic codes before an
 output transaction begins.
+
+For textured OBJ input, Core supplies a pure evidence flag only after companion
+analysis completed. Product policy can then distinguish a verified local
+Base-Color reference from an arbitrary external-texture feature. Resolver
+issues are appended as exact blocking codes, so a missing file is not collapsed
+into a generic unsupported-feature message.
 
 ## 3. Export-ready source
 
@@ -51,9 +59,17 @@ having no geometry.
 
 ## 4. GLB export and reimport
 
-Assimp's `glb2` exporter writes the candidate file inside the temporary asset
-directory. A zero-length or missing output fails immediately. AssetBridge then
-imports the generated GLB as a new scene; successful export alone is not enough.
+Before export, each unique safe PNG/JPEG payload becomes a compressed
+`aiTexture`; materials reference it through `*N`. Shared source paths map to one
+embedded image. Assimp's `glb2` exporter writes the candidate file inside the
+temporary asset directory.
+
+AssetBridge parses the GLB v2 header and chunks directly. It rejects external
+image URIs and local absolute paths, validates all bufferView bounds, confirms
+material/texture/image indices, checks PNG/JPEG signatures, and compares the
+embedded compressed bytes with the resolved source bytes. AssetBridge then
+imports the generated GLB as a new scene; successful export or container parsing
+alone is not enough.
 
 ## 5. Validation checks
 
@@ -67,6 +83,9 @@ The reimported scene is checked for:
 - Whole-scene AABB center and size within defined tolerance.
 - Per-mesh AABB, normal presence, and UV0 presence.
 - Referenced material existence and the currently verified diffuse color.
+- Per-geometry-matched mesh material name, Kd color, and Base Color texture
+  presence.
+- The exact set of mesh-used material names and their embedded image bindings.
 
 Mesh order is not assumed stable. Matching uses triangle count and world-space
 AABB, prefers exact non-empty names, and uses the lowest unmatched output

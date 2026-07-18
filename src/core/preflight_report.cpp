@@ -44,6 +44,50 @@ bool exporter_id_matches(FormatId target, std::string_view exporter_id) {
     return false;
 }
 
+std::optional<AssetFeature> companion_issue_feature(CompanionErrorCode code) {
+    switch (code) {
+    case CompanionErrorCode::material_library_missing:
+    case CompanionErrorCode::material_library_path_absolute:
+    case CompanionErrorCode::material_library_path_outside_asset_root:
+    case CompanionErrorCode::material_library_not_regular_file:
+    case CompanionErrorCode::material_reference_unresolved:
+        return AssetFeature::material_slots;
+    case CompanionErrorCode::texture_file_missing:
+    case CompanionErrorCode::texture_path_absolute:
+    case CompanionErrorCode::texture_path_outside_asset_root:
+    case CompanionErrorCode::texture_path_not_regular_file:
+    case CompanionErrorCode::texture_format_unsupported:
+    case CompanionErrorCode::texture_signature_mismatch:
+    case CompanionErrorCode::texture_semantic_unverified:
+    case CompanionErrorCode::texture_options_unverified:
+    case CompanionErrorCode::transparency_unverified:
+    case CompanionErrorCode::multiple_textures_per_material_unverified:
+    case CompanionErrorCode::texture_file_too_large:
+    case CompanionErrorCode::texture_count_limit_exceeded:
+    case CompanionErrorCode::texture_total_size_limit_exceeded:
+        return AssetFeature::external_textures;
+    case CompanionErrorCode::none:
+    case CompanionErrorCode::companion_parse_failed:
+        return std::nullopt;
+    }
+    return std::nullopt;
+}
+
+std::vector<LossItem> companion_losses(const CompanionResolution& resolution) {
+    std::vector<LossItem> losses;
+    losses.reserve(resolution.issues.size());
+    for (const auto& issue : resolution.issues) {
+        losses.push_back({
+            std::string(to_string(issue.code)),
+            companion_issue_feature(issue.code),
+            LossSeverity::blocking,
+            false,
+            issue.message
+        });
+    }
+    return losses;
+}
+
 } // namespace
 
 bool has_runtime_exporter(
@@ -73,18 +117,33 @@ PreflightReport create_preflight_report(
     }
 
     const auto source = source_status(file);
+    std::optional<CompanionResolution> companions;
+    if (source.format == FormatId::obj && inspection.features.has_value()) {
+        const CompanionResolver resolver;
+        companions = resolver.resolve(
+            file,
+            inspection.features->referenced_material_names);
+    }
+    const RoutePreflightEvidence evidence {
+        companions.has_value()
+    };
     auto decision = source.format.has_value()
         ? evaluate_route_preflight(
             *source.format,
             target,
             features,
             runtime_exporter_available,
-            static_cast<bool>(inspection))
+            static_cast<bool>(inspection),
+            evidence)
         : evaluate_preflight(
             target,
             features,
             runtime_exporter_available,
             static_cast<bool>(inspection));
+
+    if (companions.has_value()) {
+        append_preflight_losses(decision, companion_losses(*companions));
+    }
 
     return {
         normalized_report_path(file, inspection),
@@ -92,6 +151,7 @@ PreflightReport create_preflight_report(
         inspection.error_code,
         std::move(inspection.error_message),
         std::move(inspection.features),
+        std::move(companions),
         std::move(decision)
     };
 }
