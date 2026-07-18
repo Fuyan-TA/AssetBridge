@@ -142,8 +142,10 @@ public:
         stage_.store(assetbridge::ConversionStage::preflight);
         thread_ = std::jthread([this, input = std::move(input)] {
             assetbridge::AssetInspector inspector;
+            auto inspection = inspector.inspect(input);
+            stage_.store(assetbridge::ConversionStage::resolving_companions);
             InspectionWorkResult completed{
-                inspector.inspect(input),
+                std::move(inspection),
                 assetbridge::create_preflight_report(input, assetbridge::FormatId::glb2)
             };
             {
@@ -280,6 +282,22 @@ std::optional<std::filesystem::path> report_path(const assetbridge::ConversionRe
     return std::nullopt;
 }
 
+std::string_view worker_stage_text(assetbridge::ConversionStage stage) {
+    using assetbridge::ConversionStage;
+    switch (stage) {
+    case ConversionStage::preflight: return "Inspecting";
+    case ConversionStage::resolving_companions: return "Resolving Textures";
+    case ConversionStage::importing: return "Preparing Export Scene";
+    case ConversionStage::embedding_textures: return "Embedding Textures";
+    case ConversionStage::exporting: return "Exporting GLB";
+    case ConversionStage::validating_textures: return "Validating Textures";
+    case ConversionStage::reimporting: return "Reimporting GLB";
+    case ConversionStage::validating: return "Validating Geometry and Materials";
+    case ConversionStage::committing: return "Writing Report and Committing Output";
+    }
+    return "Working";
+}
+
 void draw_ui(
     DesktopAppState& state,
     DesktopWorker& worker,
@@ -364,6 +382,27 @@ void draw_ui(
                     "%s",
                     std::string(assetbridge::desktop::to_string(state.status())).c_str());
             }
+            if (state.preflight()->companions.has_value()) {
+                const auto& companions = *state.preflight()->companions;
+                ImGui::Text(
+                    "Referenced Materials: %llu    External Base Color Textures: %llu",
+                    static_cast<unsigned long long>(companions.referenced_material_count),
+                    static_cast<unsigned long long>(
+                        companions.external_texture_reference_count));
+                ImGui::Text(
+                    "Resolved Textures: %llu    Shared Deduplications: %llu    Texture Bytes: %llu",
+                    static_cast<unsigned long long>(companions.textures.size()),
+                    static_cast<unsigned long long>(
+                        companions.shared_texture_deduplication_count),
+                    static_cast<unsigned long long>(companions.texture_bytes));
+                for (const auto& texture : companions.textures) {
+                    ImGui::TextWrapped(
+                        "- %s | %s | %llu bytes",
+                        texture.asset_relative_key.c_str(),
+                        std::string(assetbridge::to_string(texture.format)).c_str(),
+                        static_cast<unsigned long long>(texture.byte_size));
+                }
+            }
         }
         if (!state.diagnostics().empty()) {
             ImGui::SeparatorText("Preflight Diagnostics");
@@ -413,8 +452,11 @@ void draw_ui(
     disabled_end(convert_disabled);
 
     ImGui::SameLine();
+    const auto displayed_status = busy
+        ? worker_stage_text(worker.stage())
+        : assetbridge::desktop::to_string(state.status());
     ImGui::TextColored(status_color(state.status()), "%s",
-        std::string(assetbridge::desktop::to_string(state.status())).c_str());
+        std::string(displayed_status).c_str());
     ImGui::TextWrapped("%s", state.message().c_str());
 
     if (state.status() == AppStatus::success && state.conversion()) {

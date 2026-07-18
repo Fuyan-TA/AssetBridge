@@ -17,6 +17,9 @@ bool is_obj_extension(const std::filesystem::path& path) {
 std::string diagnostic_message(
     const LossItem& loss,
     const AssetSummary& summary) {
+    if (loss.code != "route_feature_unverified") {
+        return loss.reason;
+    }
     if (!loss.feature) {
         return loss.reason;
     }
@@ -198,7 +201,9 @@ void DesktopAppState::complete_conversion(ConversionReport report) {
     }
     const bool succeeded = static_cast<bool>(report);
     if (succeeded) {
-        message_ = "Conversion and round-trip validation succeeded.";
+        message_ = report.embedded_texture_count > 0
+            ? "Conversion succeeded; the GLB contains validated embedded base-color textures."
+            : "Conversion and round-trip validation succeeded.";
         status_ = AppStatus::success;
     } else {
         message_ = report.error_message.empty() ? "Conversion failed." : report.error_message;

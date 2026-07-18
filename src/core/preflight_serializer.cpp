@@ -80,6 +80,40 @@ nlohmann::json losses_to_json(const PreflightDecision& decision) {
     return losses;
 }
 
+nlohmann::json companions_to_json(
+    const std::optional<CompanionResolution>& companions) {
+    if (!companions.has_value()) return nullptr;
+    nlohmann::json textures = nlohmann::json::array();
+    for (const auto& texture : companions->textures) {
+        textures.push_back({
+            { "asset_relative_key", texture.asset_relative_key },
+            { "format", to_string(texture.format) },
+            { "byte_size", texture.byte_size }
+        });
+    }
+    nlohmann::json issues = nlohmann::json::array();
+    for (const auto& issue : companions->issues) {
+        issues.push_back({
+            { "code", to_string(issue.code) },
+            { "material_name", issue.material_name },
+            { "reference", issue.reference },
+            { "message", issue.message }
+        });
+    }
+    return {
+        { "resolved", companions->safe() },
+        { "referenced_material_count", companions->referenced_material_count },
+        { "external_texture_reference_count",
+            companions->external_texture_reference_count },
+        { "resolved_texture_count", companions->textures.size() },
+        { "shared_texture_deduplication_count",
+            companions->shared_texture_deduplication_count },
+        { "texture_bytes", companions->texture_bytes },
+        { "textures", std::move(textures) },
+        { "issues", std::move(issues) }
+    };
+}
+
 std::string source_format_text(const SourceFormatStatus& source) {
     return source.format.has_value()
         ? std::string(to_string(*source.format))
@@ -153,6 +187,35 @@ std::string preflight_to_text(const PreflightReport& report) {
         }
     }
 
+    if (report.companions.has_value()) {
+        const auto& companions = *report.companions;
+        std::size_t missing_textures = 0;
+        std::size_t unsupported_semantics = 0;
+        for (const auto& issue : companions.issues) {
+            missing_textures += issue.code == CompanionErrorCode::texture_file_missing ? 1U : 0U;
+            unsupported_semantics +=
+                issue.code == CompanionErrorCode::texture_semantic_unverified
+                    || issue.code == CompanionErrorCode::texture_options_unverified
+                    || issue.code == CompanionErrorCode::transparency_unverified
+                    || issue.code == CompanionErrorCode::multiple_textures_per_material_unverified
+                ? 1U : 0U;
+        }
+        output
+            << "Companion Files:\n"
+            << "- Referenced Materials: " << companions.referenced_material_count << '\n'
+            << "- External Texture References: "
+            << companions.external_texture_reference_count << '\n'
+            << "- Resolved Textures: " << companions.textures.size() << '\n'
+            << "- Shared Texture Deduplications: "
+            << companions.shared_texture_deduplication_count << '\n'
+            << "- Missing Textures: " << missing_textures << '\n'
+            << "- Unsupported Texture Semantics: " << unsupported_semantics << '\n'
+            << "- Texture Bytes: " << companions.texture_bytes << '\n';
+        for (const auto& issue : companions.issues) {
+            output << "  issue: " << to_string(issue.code) << " | " << issue.message << '\n';
+        }
+    }
+
     output << "Capability Assessments:\n";
     for (const auto& assessment : report.decision.assessments) {
         output
@@ -212,6 +275,7 @@ std::string preflight_to_json(const PreflightReport& report) {
         { "features", report.features.has_value()
             ? features_to_json(*report.features)
             : nlohmann::json(nullptr) },
+        { "companions", companions_to_json(report.companions) },
         { "assessments", assessments_to_json(report.decision) },
         { "losses", losses_to_json(report.decision) },
         { "compatibility_result", to_string(report.decision.compatibility_result) },
@@ -247,6 +311,7 @@ std::string unknown_target_to_json(std::string_view requested_target) {
         { "source", nullptr },
         { "target", nullptr },
         { "features", nullptr },
+        { "companions", nullptr },
         { "assessments", nlohmann::json::array() },
         { "losses", nlohmann::json::array({ unknown_target_loss(requested_target) }) },
         { "compatibility_result", "blocked" },

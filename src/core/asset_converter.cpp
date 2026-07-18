@@ -160,6 +160,26 @@ std::optional<ColorValue> material_diffuse_color(
     return ColorValue { color.r, color.g, color.b, color.a };
 }
 
+std::string material_name(const aiScene& scene, unsigned int index) {
+    if (index >= scene.mNumMaterials || scene.mMaterials[index] == nullptr) {
+        return {};
+    }
+    aiString name;
+    if (scene.mMaterials[index]->Get(AI_MATKEY_NAME, name) != AI_SUCCESS) {
+        return {};
+    }
+    return { name.C_Str(), name.length };
+}
+
+bool material_has_base_color_texture(const aiScene& scene, unsigned int index) {
+    if (index >= scene.mNumMaterials || scene.mMaterials[index] == nullptr) {
+        return false;
+    }
+    const aiMaterial& material = *scene.mMaterials[index];
+    return material.GetTextureCount(aiTextureType_BASE_COLOR) > 0
+        || material.GetTextureCount(aiTextureType_DIFFUSE) > 0;
+}
+
 std::optional<ColorValue> referenced_diffuse_color(
     const aiScene& scene,
     const std::set<unsigned int>& referenced_materials) {
@@ -245,7 +265,11 @@ SceneAnalysisResult analyze_scene_for_conversion(const aiScene* scene) {
             return result;
         }
         referenced_materials.insert(mesh->mMaterialIndex);
+        mesh_analysis.material_name = material_name(*scene, mesh->mMaterialIndex);
         mesh_analysis.diffuse_color = material_diffuse_color(*scene, mesh->mMaterialIndex);
+        mesh_analysis.has_base_color_texture = material_has_base_color_texture(
+            *scene,
+            mesh->mMaterialIndex);
     }
 
     aiMatrix4x4 identity;
@@ -385,6 +409,8 @@ std::vector<ValidationCheck> validate_round_trip(
         per_mesh_normals = per_mesh_normals && before.has_normals == after.has_normals;
         per_mesh_uv0 = per_mesh_uv0 && before.has_uv0 == after.has_uv0;
         per_mesh_material = per_mesh_material
+            && before.material_name == after.material_name
+            && before.has_base_color_texture == after.has_base_color_texture
             && color_nearly_equal(before.diffuse_color, after.diffuse_color);
     }
     checks.push_back({
@@ -410,7 +436,7 @@ std::vector<ValidationCheck> validate_round_trip(
     checks.push_back({
         "per_mesh_material",
         per_mesh_material,
-        "Each matched mesh preserves the currently verified diffuse material color."
+        "Each geometry-matched mesh preserves material name, base-color texture presence, and diffuse color."
     });
     checks.push_back({
         "normals_preserved",
@@ -655,9 +681,10 @@ ConversionReport AssetConverter::convert(
 
     if (progress) progress(ConversionStage::preflight);
     const auto preflight_start = Clock::now();
-    report.preflight = create_preflight_report(input, target);
     const AssetInspector inspector;
     const auto inspection = inspector.inspect(input);
+    if (progress) progress(ConversionStage::resolving_companions);
+    report.preflight = create_preflight_report(input, target);
     report.timings.preflight_ms = elapsed_ms(preflight_start);
     if (!*report.preflight || !inspection) {
         const auto code = inspection.error_code == InspectionErrorCode::file_not_found
@@ -798,6 +825,7 @@ ConversionReport AssetConverter::convert(
             total_start);
         return report;
     }
+    report.embedded_texture_count = embedding.embedded_texture_count;
     const auto source_analysis = analyze_scene_for_conversion(source_scene);
     if (!source_analysis.valid) {
         set_error(

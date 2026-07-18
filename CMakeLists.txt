@@ -266,11 +266,25 @@ add_test(
         --acceptance-input "${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/unverified_texture.obj"
         --acceptance-output "${CMAKE_CURRENT_BINARY_DIR}/desktop-acceptance-unverified"
 )
+add_test(
+    NAME assetbridge-desktop-acceptance-textured
+    COMMAND assetbridge-desktop
+        --acceptance-input "${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/textured/probe/texture_behavior.obj"
+        --acceptance-output "${CMAKE_CURRENT_BINARY_DIR}/desktop-acceptance-textured"
+)
+add_test(
+    NAME assetbridge-desktop-acceptance-textured-unicode
+    COMMAND assetbridge-desktop
+        --acceptance-input "${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/textured/probe/中文路径/中文材质.obj"
+        --acceptance-output "${CMAKE_CURRENT_BINARY_DIR}/desktop-acceptance-textured-unicode"
+)
 set_tests_properties(
     assetbridge-desktop-acceptance-ascii
     assetbridge-desktop-acceptance-unicode
     assetbridge-desktop-acceptance-multimesh
     assetbridge-desktop-reject-unverified
+    assetbridge-desktop-acceptance-textured
+    assetbridge-desktop-acceptance-textured-unicode
     PROPERTIES TIMEOUT 30
 )
 set_tests_properties(assetbridge-desktop-reject-unverified PROPERTIES WILL_FAIL TRUE)
@@ -397,6 +411,16 @@ add_assetbridge_cli_test(assetbridge-cli-preflight-multimesh-glb-json
     "-DASSETBRIDGE_COMPARE_TEXT=TRUE"
 )
 
+add_assetbridge_cli_test(assetbridge-cli-preflight-textured-glb-json
+    "-DASSETBRIDGE_COMMAND=preflight"
+    "-DASSETBRIDGE_INPUT=${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/textured/probe/texture_behavior.obj"
+    "-DASSETBRIDGE_TARGET=glb"
+    "-DASSETBRIDGE_OPTION=--json"
+    "-DASSETBRIDGE_EXPECTED_EXIT=0"
+    "-DASSETBRIDGE_VALIDATE_JSON=preflight_glb_multi"
+    "-DASSETBRIDGE_COMPARE_TEXT=TRUE"
+)
+
 add_assetbridge_cli_test(assetbridge-cli-preflight-unknown-json
     "-DASSETBRIDGE_COMMAND=preflight"
     "-DASSETBRIDGE_INPUT=${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/minimal_triangle.obj"
@@ -455,6 +479,39 @@ add_assetbridge_cli_test(assetbridge-cli-convert-multimesh-unicode-json
     "-DASSETBRIDGE_INPUT=${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/中文多网格.obj"
     "-DASSETBRIDGE_TARGET=GLB"
     "-DASSETBRIDGE_OUTPUT=${CMAKE_CURRENT_BINARY_DIR}/cli-convert-multimesh-unicode"
+    "-DASSETBRIDGE_CLEAN_OUTPUT=TRUE"
+    "-DASSETBRIDGE_OPTION=--json"
+    "-DASSETBRIDGE_EXPECTED_EXIT=0"
+    "-DASSETBRIDGE_VALIDATE_JSON=conversion_success"
+)
+
+add_assetbridge_cli_test(assetbridge-cli-convert-textured-json
+    "-DASSETBRIDGE_COMMAND=convert"
+    "-DASSETBRIDGE_INPUT=${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/textured/probe/texture_behavior.obj"
+    "-DASSETBRIDGE_TARGET=glb"
+    "-DASSETBRIDGE_OUTPUT=${CMAKE_CURRENT_BINARY_DIR}/cli-convert-textured"
+    "-DASSETBRIDGE_CLEAN_OUTPUT=TRUE"
+    "-DASSETBRIDGE_OPTION=--json"
+    "-DASSETBRIDGE_EXPECTED_EXIT=0"
+    "-DASSETBRIDGE_VALIDATE_JSON=conversion_success"
+)
+
+add_assetbridge_cli_test(assetbridge-cli-convert-textured-unicode-json
+    "-DASSETBRIDGE_COMMAND=convert"
+    "-DASSETBRIDGE_INPUT=${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/textured/probe/中文路径/中文材质.obj"
+    "-DASSETBRIDGE_TARGET=glb"
+    "-DASSETBRIDGE_OUTPUT=${CMAKE_CURRENT_BINARY_DIR}/cli-convert-textured-unicode"
+    "-DASSETBRIDGE_CLEAN_OUTPUT=TRUE"
+    "-DASSETBRIDGE_OPTION=--json"
+    "-DASSETBRIDGE_EXPECTED_EXIT=0"
+    "-DASSETBRIDGE_VALIDATE_JSON=conversion_success"
+)
+
+add_assetbridge_cli_test(assetbridge-cli-convert-shared-texture-json
+    "-DASSETBRIDGE_COMMAND=convert"
+    "-DASSETBRIDGE_INPUT=${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/textured/verified/shared_texture.obj"
+    "-DASSETBRIDGE_TARGET=glb"
+    "-DASSETBRIDGE_OUTPUT=${CMAKE_CURRENT_BINARY_DIR}/cli-convert-shared-texture"
     "-DASSETBRIDGE_CLEAN_OUTPUT=TRUE"
     "-DASSETBRIDGE_OPTION=--json"
     "-DASSETBRIDGE_EXPECTED_EXIT=0"
@@ -539,6 +596,8 @@ set_tests_properties(
     assetbridge-desktop-acceptance-unicode
     assetbridge-desktop-acceptance-multimesh
     assetbridge-desktop-reject-unverified
+    assetbridge-desktop-acceptance-textured
+    assetbridge-desktop-acceptance-textured-unicode
     PROPERTIES LABELS "gui;acceptance"
 )
 
@@ -546,6 +605,7 @@ get_property(ASSETBRIDGE_REGISTERED_TESTS DIRECTORY PROPERTY TESTS)
 foreach(ASSETBRIDGE_TEST IN LISTS ASSETBRIDGE_REGISTERED_TESTS)
     if(ASSETBRIDGE_TEST MATCHES "^assetbridge-cli-")
         set_property(TEST "${ASSETBRIDGE_TEST}" APPEND PROPERTY LABELS "cli")
+        set_property(TEST "${ASSETBRIDGE_TEST}" PROPERTY TIMEOUT 60)
     endif()
     if(ASSETBRIDGE_TEST MATCHES "^assetbridge-cli-convert-")
         set_property(TEST "${ASSETBRIDGE_TEST}" APPEND PROPERTY LABELS "acceptance")

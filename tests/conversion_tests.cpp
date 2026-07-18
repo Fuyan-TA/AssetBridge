@@ -88,6 +88,7 @@ std::string_view stage_name(assetbridge::ConversionStage stage) {
     using assetbridge::ConversionStage;
     switch (stage) {
     case ConversionStage::preflight: return "preflight";
+    case ConversionStage::resolving_companions: return "resolving_companions";
     case ConversionStage::importing: return "importing";
     case ConversionStage::embedding_textures: return "embedding_textures";
     case ConversionStage::exporting: return "exporting";

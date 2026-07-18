@@ -32,6 +32,7 @@ enum class ConversionErrorCode {
 
 enum class ConversionStage {
     preflight,
+    resolving_companions,
     importing,
     embedding_textures,
     exporting,
@@ -68,10 +69,12 @@ struct ColorValue {
 
 struct ConversionMeshAnalysis {
     std::string name;
+    std::string material_name;
     std::uint64_t vertex_count = 0;
     std::uint64_t triangle_count = 0;
     bool has_normals = false;
     bool has_uv0 = false;
+    bool has_base_color_texture = false;
     BoundsValue bounds;
     std::optional<ColorValue> diffuse_color;
 };
@@ -143,6 +146,7 @@ struct ConversionReport {
     std::optional<ConversionSceneAnalysis> output_analysis;
     std::vector<ValidationCheck> validation_checks;
     std::vector<std::string> warnings;
+    std::size_t embedded_texture_count = 0;
     ConversionErrorCode error_code = ConversionErrorCode::none;
     std::string error_message;
     std::string assimp_version;
