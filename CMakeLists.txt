@@ -554,6 +554,30 @@ add_assetbridge_cli_test(assetbridge-cli-convert-unverified-json
     "-DASSETBRIDGE_VALIDATE_JSON=conversion_unverified"
 )
 
+add_assetbridge_cli_test(assetbridge-cli-convert-path-traversal-json
+    "-DASSETBRIDGE_COMMAND=convert"
+    "-DASSETBRIDGE_INPUT=${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/textured/rejected/path_traversal.obj"
+    "-DASSETBRIDGE_TARGET=glb"
+    "-DASSETBRIDGE_OUTPUT=${CMAKE_CURRENT_BINARY_DIR}/cli-convert-path-traversal"
+    "-DASSETBRIDGE_CLEAN_OUTPUT=TRUE"
+    "-DASSETBRIDGE_EXPECT_EMPTY_OUTPUT=TRUE"
+    "-DASSETBRIDGE_OPTION=--json"
+    "-DASSETBRIDGE_EXPECTED_EXIT=1"
+    "-DASSETBRIDGE_VALIDATE_JSON=conversion_unverified"
+)
+
+add_assetbridge_cli_test(assetbridge-cli-convert-unsupported-semantic-json
+    "-DASSETBRIDGE_COMMAND=convert"
+    "-DASSETBRIDGE_INPUT=${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/textured/rejected/unsupported_semantic.obj"
+    "-DASSETBRIDGE_TARGET=glb"
+    "-DASSETBRIDGE_OUTPUT=${CMAKE_CURRENT_BINARY_DIR}/cli-convert-unsupported-semantic"
+    "-DASSETBRIDGE_CLEAN_OUTPUT=TRUE"
+    "-DASSETBRIDGE_EXPECT_EMPTY_OUTPUT=TRUE"
+    "-DASSETBRIDGE_OPTION=--json"
+    "-DASSETBRIDGE_EXPECTED_EXIT=1"
+    "-DASSETBRIDGE_VALIDATE_JSON=conversion_unverified"
+)
+
 add_assetbridge_cli_test(assetbridge-cli-convert-unknown-target-json
     "-DASSETBRIDGE_COMMAND=convert"
     "-DASSETBRIDGE_INPUT=${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/minimal_triangle.obj"

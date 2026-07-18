@@ -40,14 +40,14 @@ assetbridge::PreflightReport safe_preflight(const std::filesystem::path& path) {
         {},
         {}
     };
-    return {
-        path,
-        { assetbridge::FormatId::obj, true, true },
-        assetbridge::InspectionErrorCode::none,
-        {},
-        features,
-        std::move(decision)
-    };
+    assetbridge::PreflightReport report;
+    report.file_path = path;
+    report.source = { assetbridge::FormatId::obj, true, true };
+    report.features = std::move(features);
+    report.companions = assetbridge::CompanionResolution {};
+    report.companions->referenced_material_count = 1;
+    report.decision = std::move(decision);
+    return report;
 }
 
 assetbridge::PreflightReport blocked_preflight(
@@ -65,14 +65,14 @@ assetbridge::PreflightReport blocked_preflight(
         {},
         std::move(losses)
     };
-    return {
-        path,
-        { assetbridge::FormatId::obj, true, true },
-        assetbridge::InspectionErrorCode::none,
-        {},
-        features,
-        std::move(decision)
-    };
+    assetbridge::PreflightReport report;
+    report.file_path = path;
+    report.source = { assetbridge::FormatId::obj, true, true };
+    report.features = std::move(features);
+    report.companions = assetbridge::CompanionResolution {};
+    report.companions->referenced_material_count = 1;
+    report.decision = std::move(decision);
+    return report;
 }
 
 assetbridge::ConversionReport successful_conversion(const std::filesystem::path& root) {
@@ -83,6 +83,7 @@ assetbridge::ConversionReport successful_conversion(const std::filesystem::path&
         *report.output_directory / L"三角形.glb",
         *report.output_directory / "conversion-report.json"
     };
+    report.embedded_texture_count = 1;
     return report;
 }
 
@@ -223,6 +224,9 @@ int main() {
     failures += require(success.status() == AppStatus::validating, "conversion should expose validating stage");
     success.complete_conversion(successful_conversion(L"输出"));
     failures += require(success.status() == AppStatus::success, "successful report should enter success");
+    failures += require(
+        success.message().find("embedded base-color textures") != std::string::npos,
+        "successful textured conversion should state that the GLB contains embedded textures");
     failures += require(
         success.conversion()->output_directory->filename() == L"三角形",
         "Unicode output path should be preserved");

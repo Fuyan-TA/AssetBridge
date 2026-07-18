@@ -774,6 +774,34 @@ void validate_conversion_error(const Json& report, std::string_view expected_cod
         "conversion error message must be non-empty");
 }
 
+void validate_conversion_companion_error(
+    const Json& report,
+    const std::filesystem::path& input) {
+    validate_conversion_error(report, "companion_resolution_failed");
+    std::string expected_issue;
+    if (input.filename() == "unverified_texture.obj") {
+        expected_issue = "texture_file_missing";
+    } else if (input.filename() == "path_traversal.obj") {
+        expected_issue = "texture_path_outside_asset_root";
+    } else if (input.filename() == "unsupported_semantic.obj") {
+        expected_issue = "texture_semantic_unverified";
+    } else {
+        throw std::runtime_error("Unknown companion-error fixture");
+    }
+    const auto& losses = report.at("preflight").at("losses");
+    require(
+        std::any_of(losses.begin(), losses.end(), [&](const Json& loss) {
+            return loss.at("code") == expected_issue
+                && loss.at("severity") == "blocking";
+        }),
+        "conversion preflight is missing the stable companion issue code");
+    const auto& issue_codes = report.at("textures").at("issue_codes");
+    require(
+        std::find(issue_codes.begin(), issue_codes.end(), expected_issue)
+            != issue_codes.end(),
+        "conversion texture diagnostics are missing the companion issue code");
+}
+
 } // namespace
 
 int wmain(int argc, wchar_t* argv[]) {
@@ -842,7 +870,7 @@ int wmain(int argc, wchar_t* argv[]) {
             validate_conversion_error(report, "import_failed");
         } else if (mode == L"conversion_unverified") {
             require(argc == 4, "conversion_unverified requires an input file");
-            validate_conversion_error(report, "companion_resolution_failed");
+            validate_conversion_companion_error(report, std::filesystem::path(argv[3]));
         } else if (mode == L"conversion_unknown") {
             require(argc == 4, "conversion_unknown requires an input file");
             validate_conversion_error(report, "unknown_target_format");
