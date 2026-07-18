@@ -2,7 +2,9 @@
 #include "assetbridge/product/loss_preflight.hpp"
 
 #include <algorithm>
+#include <array>
 #include <iostream>
+#include <set>
 #include <string_view>
 
 namespace {
@@ -67,6 +69,34 @@ int main() {
             && !route_feature_verified(obj_to_glb, AssetFeature::node_hierarchy)
             && !route_feature_verified(obj_to_glb, AssetFeature::animations),
         "unverified route features must stay outside the verified feature set");
+
+    constexpr std::array texture_route_features {
+        RouteFeature::multiple_referenced_materials,
+        RouteFeature::base_color_texture,
+        RouteFeature::embedded_base_color_texture,
+        RouteFeature::shared_texture_deduplication
+    };
+    for (const auto& route : routes) {
+        failures += require(
+            route.feature_capabilities.size() == texture_route_features.size(),
+            "every conversion route must define every v0.2 route feature");
+        std::set<RouteFeature> feature_ids;
+        for (const auto& capability : route.feature_capabilities) {
+            feature_ids.insert(capability.feature);
+        }
+        failures += require(
+            feature_ids.size() == texture_route_features.size(),
+            "route feature capabilities must be unique");
+        for (const auto feature : texture_route_features) {
+            const auto& capability = route_feature_capability(route, feature);
+            failures += require(
+                !capability.product_enabled && !capability.verified,
+                "v0.2 candidate features must remain disabled until end-to-end validation exists");
+            failures += require(
+                to_string(feature) != "unknown",
+                "every route feature must have a stable code");
+        }
+    }
 
     AssetFeatures supported_features;
     supported_features.mesh_count = 1;

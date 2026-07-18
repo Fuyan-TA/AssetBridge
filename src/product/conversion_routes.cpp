@@ -35,7 +35,13 @@ std::vector<ConversionRoute> make_registry() {
                         AssetFeature::uv0,
                         AssetFeature::material_slots
                     }
-                    : std::vector<AssetFeature> {}
+                    : std::vector<AssetFeature> {},
+                {
+                    { RouteFeature::multiple_referenced_materials, false, false },
+                    { RouteFeature::base_color_texture, false, false },
+                    { RouteFeature::embedded_base_color_texture, false, false },
+                    { RouteFeature::shared_texture_deduplication, false, false }
+                }
             });
         }
     }
@@ -70,6 +76,35 @@ bool route_feature_verified(
         route.verified_features.begin(),
         route.verified_features.end(),
         feature) != route.verified_features.end();
+}
+
+const RouteFeatureCapability& route_feature_capability(
+    const ConversionRoute& route,
+    RouteFeature feature) {
+    const auto iterator = std::find_if(
+        route.feature_capabilities.begin(),
+        route.feature_capabilities.end(),
+        [feature](const RouteFeatureCapability& capability) {
+            return capability.feature == feature;
+        });
+    if (iterator == route.feature_capabilities.end()) {
+        throw std::logic_error("Route feature capability is missing from the registry.");
+    }
+    return *iterator;
+}
+
+std::string_view to_string(RouteFeature feature) noexcept {
+    switch (feature) {
+    case RouteFeature::multiple_referenced_materials:
+        return "multiple_referenced_materials";
+    case RouteFeature::base_color_texture:
+        return "base_color_texture";
+    case RouteFeature::embedded_base_color_texture:
+        return "embedded_base_color_texture";
+    case RouteFeature::shared_texture_deduplication:
+        return "shared_texture_deduplication";
+    }
+    return "unknown";
 }
 
 } // namespace assetbridge
