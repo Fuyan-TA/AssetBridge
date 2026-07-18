@@ -1,5 +1,6 @@
 #include "assetbridge/product/loss_preflight.hpp"
 
+#include <iterator>
 #include <string>
 
 namespace assetbridge {
@@ -168,6 +169,20 @@ PreflightDecision evaluate_route_preflight(
         decision.product_enabled,
         decision.verified);
     return decision;
+}
+
+void append_preflight_losses(
+    PreflightDecision& decision,
+    std::vector<LossItem> losses) {
+    decision.losses.insert(
+        decision.losses.end(),
+        std::make_move_iterator(losses.begin()),
+        std::make_move_iterator(losses.end()));
+    decision.compatibility_result = compatibility_from(decision.losses);
+    decision.overall_result = overall_from(
+        decision.compatibility_result,
+        decision.product_enabled,
+        decision.verified);
 }
 
 } // namespace assetbridge

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "assetbridge/core/asset_inspector.hpp"
+#include "assetbridge/core/companion_resolver.hpp"
 #include "assetbridge/core/runtime_capabilities.hpp"
 #include "assetbridge/product/loss_preflight.hpp"
 
@@ -22,6 +23,7 @@ struct PreflightReport {
     InspectionErrorCode error_code = InspectionErrorCode::none;
     std::string error_message;
     std::optional<AssetFeatures> features;
+    std::optional<CompanionResolution> companions;
     PreflightDecision decision;
 
     [[nodiscard]] explicit operator bool() const noexcept {

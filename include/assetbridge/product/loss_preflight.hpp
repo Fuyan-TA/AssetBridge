@@ -63,4 +63,8 @@ struct PreflightDecision {
     bool runtime_exporter_available,
     bool asset_valid = true);
 
+void append_preflight_losses(
+    PreflightDecision& decision,
+    std::vector<LossItem> losses);
+
 } // namespace assetbridge

@@ -159,6 +159,22 @@ int main() {
         !obj_to_stl.product_enabled && !obj_to_stl.verified,
         "OBJ to STL must remain disabled and unverified");
 
+    auto appended = supported;
+    append_preflight_losses(appended, {
+        {
+            "texture_file_missing",
+            AssetFeature::external_textures,
+            LossSeverity::blocking,
+            false,
+            "Synthetic missing texture."
+        }
+    });
+    failures += require(
+        appended.compatibility_result == CompatibilityResult::blocked
+            && appended.overall_result == OverallResult::blocked
+            && appended.losses.back().code == "texture_file_missing",
+        "Core-provided companion losses must preserve stable codes and recompute priority");
+
     if (failures == 0) {
         std::cout << "All AssetBridge conversion route tests passed.\n";
         return 0;

@@ -94,6 +94,10 @@ int main() {
             failures += require(features.meshes_with_tangents == 0, "OBJ should not invent tangents");
             failures += require(features.max_uv_channel_count == 1, "maximum UV channel count should be 1");
             failures += require(features.referenced_material_count == 1, "one material should be referenced by a mesh");
+            failures += require(
+                features.referenced_material_names.size() == 1
+                    && features.referenced_material_names.front() == "TestMaterial",
+                "inspector should expose only the mesh-referenced material name");
             failures += require(features.bone_count == 0, "OBJ should not invent bones");
             failures += require(features.animations.empty(), "OBJ should not invent animations");
             failures += require(features.morph_target_names.empty(), "OBJ should not invent morph targets");
