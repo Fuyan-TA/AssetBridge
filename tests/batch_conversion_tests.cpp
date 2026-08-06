@@ -99,6 +99,31 @@ int wmain(int argc, wchar_t* argv[]) {
     }
     failures += require(!has_temporary_directory(output), "batch must leave no transaction directory");
 
+    const auto unicode_output = output / L"\u4e2d\u6587\u8f93\u51fa\u6839";
+    BatchCoordinator unicode_batch(make_asset_batch_executor());
+    const auto unicode_add = unicode_batch.add_inputs({
+        assets / "minimal_triangle.obj",
+        assets / L"\u4e2d\u6587\u4e09\u89d2\u5f62.obj"
+    });
+    failures += require(
+        unicode_add.accepted.size() == 2
+            && unicode_batch.set_output_root(unicode_output),
+        "batch should accept an explicit Unicode output root");
+    const auto unicode_snapshot = unicode_batch.run();
+    std::string unicode_write_error;
+    failures += require(
+        unicode_snapshot.status == BatchRunStatus::success
+            && unicode_snapshot.summary.succeeded == 2,
+        "ASCII and Unicode OBJ files should convert under a Unicode output root");
+    failures += require(
+        write_batch_report(unicode_snapshot, unicode_write_error)
+            && std::filesystem::is_regular_file(unicode_output / "batch-report.json"),
+        "Unicode output root should contain a readable batch report: "
+            + unicode_write_error);
+    failures += require(
+        !has_temporary_directory(unicode_output),
+        "Unicode output root should not retain transaction directories");
+
     const auto desktop_output = output / "desktop-state";
     assetbridge::desktop::DesktopBatchState desktop(
         make_asset_batch_preflight_executor(), make_asset_batch_executor());
