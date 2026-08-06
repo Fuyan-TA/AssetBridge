@@ -97,7 +97,7 @@ shutdown joins the worker before graphics and window teardown.
 
 ## Version and package boundaries
 
-`project(AssetBridge VERSION 0.1.0)` is the authoritative version source.
+`project(AssetBridge VERSION 0.2.0)` is the authoritative version source.
 CMake configures `assetbridge/version.hpp` for CLI and desktop use. Install
 rules gather the two product executables, runtime dependencies, Microsoft
 redistributable DLLs discovered by the official CMake module, and license

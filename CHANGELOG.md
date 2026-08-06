@@ -6,7 +6,7 @@ All notable changes to AssetBridge are documented here.
 
 No product capability is currently scheduled for this section.
 
-## [0.2.0] - 2026-07-19
+## [0.2.0] - 2026-08-06
 
 ### Added
 

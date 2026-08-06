@@ -1,6 +1,6 @@
 # AssetBridge v0.2.0 Release Notes
 
-Release date: 2026-07-19
+Release date: 2026-08-06
 
 AssetBridge v0.2.0 expands only the verified OBJ→GLB2 route. It does not add
 another input/output format or broaden support to character data or general PBR
