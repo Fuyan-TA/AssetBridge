@@ -49,7 +49,8 @@ enum class BatchRunStatus {
 enum class BatchInputIssueCode {
     duplicate_input,
     not_obj,
-    job_limit_exceeded
+    job_limit_exceeded,
+    batch_locked
 };
 
 [[nodiscard]] std::string_view to_string(BatchJobStatus status) noexcept;
@@ -78,11 +79,22 @@ struct BatchJobResult {
     BatchJobDiagnostics diagnostics;
 };
 
+struct BatchJobPreview {
+    std::uint64_t mesh_count = 0;
+    std::uint64_t face_count = 0;
+    std::uint64_t triangle_count = 0;
+    std::uint64_t material_count = 0;
+    std::uint64_t texture_count = 0;
+    bool preflight_safe = false;
+    std::vector<BatchError> diagnostics;
+};
+
 struct BatchJob {
     BatchJobId id;
     std::filesystem::path input_path;
     BatchJobStatus status = BatchJobStatus::queued;
     std::optional<BatchJobResult> result;
+    std::optional<BatchJobPreview> preview;
 };
 
 struct BatchSummary {
@@ -125,11 +137,20 @@ struct BatchExecutionResult {
     BatchJobResult result;
 };
 
+struct BatchPreflightResult {
+    BatchJobStatus status = BatchJobStatus::failed;
+    BatchJobPreview preview;
+    std::optional<BatchError> error;
+};
+
 using BatchProgressCallback = std::function<void(BatchJobStatus)>;
 using BatchExecutor = std::function<BatchExecutionResult(
     const BatchExecutionRequest&,
     const BatchProgressCallback&)>;
 using BatchStateCallback = std::function<void(const BatchJob&)>;
+using BatchPreflightExecutor = std::function<BatchPreflightResult(
+    const std::filesystem::path&,
+    const BatchProgressCallback&)>;
 
 class BatchCoordinator {
 public:
@@ -144,6 +165,10 @@ public:
     [[nodiscard]] bool running() const;
     [[nodiscard]] bool cancel_after_current();
     [[nodiscard]] BatchSnapshot snapshot() const;
+    [[nodiscard]] bool prepare_job(
+        BatchJobId id,
+        const BatchPreflightExecutor& preflight_executor,
+        const BatchStateCallback& state_callback = {});
 
     BatchSnapshot run(const BatchStateCallback& state_callback = {});
 

@@ -80,6 +80,53 @@ std::optional<std::filesystem::path> show_dialog(bool folder, void* owner_window
     return result;
 }
 
+std::vector<std::filesystem::path> show_obj_files_dialog(void* owner_window) {
+    IFileOpenDialog* dialog = nullptr;
+    if (FAILED(CoCreateInstance(
+            CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&dialog)))) {
+        return {};
+    }
+
+    DWORD options = 0;
+    if (FAILED(dialog->GetOptions(&options))) {
+        dialog->Release();
+        return {};
+    }
+    options |= FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST | FOS_FILEMUSTEXIST
+        | FOS_ALLOWMULTISELECT;
+    const COMDLG_FILTERSPEC filters[] = {
+        { L"Wavefront OBJ (*.obj)", L"*.obj" },
+        { L"All files (*.*)", L"*.*" }
+    };
+    dialog->SetFileTypes(static_cast<UINT>(std::size(filters)), filters);
+    dialog->SetDefaultExtension(L"obj");
+    dialog->SetOptions(options);
+
+    std::vector<std::filesystem::path> result;
+    if (SUCCEEDED(dialog->Show(static_cast<HWND>(owner_window)))) {
+        IShellItemArray* items = nullptr;
+        if (SUCCEEDED(dialog->GetResults(&items))) {
+            DWORD count = 0;
+            items->GetCount(&count);
+            result.reserve(count);
+            for (DWORD index = 0; index < count; ++index) {
+                IShellItem* item = nullptr;
+                if (FAILED(items->GetItemAt(index, &item))) continue;
+                PWSTR raw_path = nullptr;
+                if (SUCCEEDED(item->GetDisplayName(SIGDN_FILESYSPATH, &raw_path))
+                    && raw_path != nullptr) {
+                    result.emplace_back(raw_path);
+                }
+                CoTaskMemFree(raw_path);
+                item->Release();
+            }
+            items->Release();
+        }
+    }
+    dialog->Release();
+    return result;
+}
+
 } // namespace
 
 std::filesystem::path path_from_utf8(std::string_view utf8) {
@@ -93,6 +140,10 @@ std::string path_to_utf8(const std::filesystem::path& path) {
 
 std::optional<std::filesystem::path> choose_obj_file(void* owner_window) {
     return show_dialog(false, owner_window);
+}
+
+std::vector<std::filesystem::path> choose_obj_files(void* owner_window) {
+    return show_obj_files_dialog(owner_window);
 }
 
 std::optional<std::filesystem::path> choose_folder(void* owner_window) {

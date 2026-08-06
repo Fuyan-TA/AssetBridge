@@ -1,6 +1,7 @@
 #include "assetbridge/batch/batch_coordinator.hpp"
 #include "assetbridge/core/batch_processor.hpp"
 #include "assetbridge/core/batch_serializer.hpp"
+#include "assetbridge/desktop/desktop_batch_state.hpp"
 
 #include <filesystem>
 #include <fstream>
@@ -97,6 +98,24 @@ int wmain(int argc, wchar_t* argv[]) {
             "batch JSON number and null semantics should be stable");
     }
     failures += require(!has_temporary_directory(output), "batch must leave no transaction directory");
+
+    const auto desktop_output = output / "desktop-state";
+    assetbridge::desktop::DesktopBatchState desktop(
+        make_asset_batch_preflight_executor(), make_asset_batch_executor());
+    const auto desktop_add = desktop.add_files({ assets / "minimal_triangle.obj" });
+    failures += require(desktop_add.accepted.size() == 1, "desktop adapter should add one OBJ");
+    failures += require(desktop.begin_preparation(), "desktop adapter should start preflight");
+    desktop.prepare_all();
+    failures += require(
+        desktop.set_output_root(desktop_output) && desktop.begin_batch(),
+        "desktop adapter should accept output and start conversion");
+    const auto desktop_snapshot = desktop.run_batch();
+    std::string desktop_write_error;
+    failures += require(
+        desktop_snapshot.status == BatchRunStatus::success
+            && write_batch_report(desktop_snapshot, desktop_write_error),
+        "prepared desktop adapter snapshot should convert and serialize: "
+            + desktop_write_error);
 
     const auto same_a = output / "inputs-a";
     const auto same_b = output / "inputs-b";

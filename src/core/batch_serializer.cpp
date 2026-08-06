@@ -35,7 +35,7 @@ nlohmann::json job_json(const batch::BatchJob& job) {
     const double duration = std::isfinite(result.duration_ms) && result.duration_ms >= 0.0
         ? result.duration_ms
         : 0.0;
-    return {
+    auto value = nlohmann::json {
         { "id", batch::batch_job_id_string(job.id) },
         { "input_path", path_to_generic_utf8(job.input_path) },
         { "status", batch::to_string(job.status) },
@@ -62,6 +62,7 @@ nlohmann::json job_json(const batch::BatchJob& job) {
             { "validation_failure_count", result.diagnostics.validation_failure_count }
         } }
     };
+    return value;
 }
 
 nlohmann::json snapshot_json(const batch::BatchSnapshot& snapshot) {

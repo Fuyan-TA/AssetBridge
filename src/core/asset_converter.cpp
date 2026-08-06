@@ -11,6 +11,7 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <cwctype>
 #include <fstream>
 #include <iterator>
 #include <limits>
@@ -27,6 +28,21 @@ namespace assetbridge {
 namespace {
 
 using Clock = std::chrono::steady_clock;
+
+bool windows_reserved_name(std::wstring value) {
+    const auto dot = value.find(L'.');
+    if (dot != std::wstring::npos) value.resize(dot);
+    std::transform(value.begin(), value.end(), value.begin(), [](wchar_t character) {
+        return static_cast<wchar_t>(std::towupper(character));
+    });
+    if (value == L"CON" || value == L"PRN" || value == L"AUX" || value == L"NUL") {
+        return true;
+    }
+    if (value.size() == 4 && (value.starts_with(L"COM") || value.starts_with(L"LPT"))) {
+        return value[3] >= L'1' && value[3] <= L'9';
+    }
+    return false;
+}
 
 double elapsed_ms(Clock::time_point start) {
     return std::chrono::duration<double, std::milli>(Clock::now() - start).count();
@@ -561,6 +577,25 @@ void set_error(
 
 } // namespace
 
+std::filesystem::path sanitize_output_stem(
+    const std::filesystem::path& source_stem) {
+    std::wstring value = source_stem.filename().native();
+    for (auto& character : value) {
+        if (character < 32 || character == L'<' || character == L'>'
+            || character == L':' || character == L'"' || character == L'/'
+            || character == L'\\' || character == L'|' || character == L'?'
+            || character == L'*') {
+            character = L'_';
+        }
+    }
+    while (!value.empty() && (value.back() == L'.' || value.back() == L' ')) {
+        value.pop_back();
+    }
+    if (value.empty() || value == L"." || value == L"..") value = L"asset";
+    if (windows_reserved_name(value)) value.insert(value.begin(), L'_');
+    return std::filesystem::path(value);
+}
+
 MeshMatchingResult match_conversion_meshes(
     const std::vector<ConversionMeshAnalysis>& source,
     const std::vector<ConversionMeshAnalysis>& output) {
@@ -728,7 +763,7 @@ ConversionReport AssetConverter::convert(
         0
     };
 
-    const auto stem = input.filename().stem();
+    const auto stem = sanitize_output_stem(input.filename().stem());
     if (stem.empty() || stem == "." || stem == ".." || stem.has_parent_path()) {
         set_error(
             report,

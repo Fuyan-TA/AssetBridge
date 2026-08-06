@@ -88,6 +88,7 @@ target_link_libraries(assetbridge-core
 target_compile_options(assetbridge-core PRIVATE /W4 /permissive- /utf-8)
 
 add_library(assetbridge-desktop-model STATIC
+    src/desktop/desktop_batch_state.cpp
     src/desktop/desktop_app_state.cpp
 )
 
@@ -205,6 +206,14 @@ add_executable(assetbridge-desktop-state-tests
 target_link_libraries(assetbridge-desktop-state-tests PRIVATE assetbridge-desktop-model)
 target_compile_options(assetbridge-desktop-state-tests PRIVATE /W4 /permissive- /utf-8)
 
+add_executable(assetbridge-desktop-batch-state-tests
+    tests/desktop_batch_state_tests.cpp
+)
+
+target_link_libraries(assetbridge-desktop-batch-state-tests
+    PRIVATE assetbridge-desktop-model assetbridge-batch)
+target_compile_options(assetbridge-desktop-batch-state-tests PRIVATE /W4 /permissive- /utf-8)
+
 add_executable(assetbridge-batch-coordinator-tests
     tests/batch_coordinator_tests.cpp
 )
@@ -220,6 +229,7 @@ target_link_libraries(assetbridge-batch-conversion-tests
     PRIVATE
         assetbridge-core
         assetbridge-batch
+        assetbridge-desktop-model
         nlohmann_json::nlohmann_json
 )
 target_compile_options(assetbridge-batch-conversion-tests PRIVATE /W4 /permissive- /utf-8)
@@ -269,6 +279,7 @@ set_tests_properties(assetbridge-scene-semantics PROPERTIES
 )
 
 add_test(NAME assetbridge-desktop-state COMMAND assetbridge-desktop-state-tests)
+add_test(NAME assetbridge-desktop-batch-state COMMAND assetbridge-desktop-batch-state-tests)
 add_test(NAME assetbridge-batch-coordinator COMMAND assetbridge-batch-coordinator-tests)
 add_test(
     NAME assetbridge-batch-conversion
@@ -330,6 +341,43 @@ set_tests_properties(
     PROPERTIES TIMEOUT 30
 )
 set_tests_properties(assetbridge-desktop-reject-unverified PROPERTIES WILL_FAIL TRUE)
+
+add_test(
+    NAME assetbridge-desktop-batch-acceptance-ascii
+    COMMAND assetbridge-desktop
+        --acceptance-input "${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/minimal_triangle.obj"
+        --acceptance-input "${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/multi_two_triangles.obj"
+        --acceptance-output "${CMAKE_CURRENT_BINARY_DIR}/desktop-batch-acceptance-ascii"
+)
+add_test(
+    NAME assetbridge-desktop-batch-acceptance-unicode
+    COMMAND assetbridge-desktop
+        --acceptance-input "${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/中文三角形.obj"
+        --acceptance-input "${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/中文多网格.obj"
+        --acceptance-output "${CMAKE_CURRENT_BINARY_DIR}/desktop-batch-acceptance-unicode"
+)
+add_test(
+    NAME assetbridge-desktop-batch-acceptance-textured
+    COMMAND assetbridge-desktop
+        --acceptance-input "${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/textured/probe/texture_behavior.obj"
+        --acceptance-input "${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/textured/verified/shared_texture.obj"
+        --acceptance-output "${CMAKE_CURRENT_BINARY_DIR}/desktop-batch-acceptance-textured"
+)
+add_test(
+    NAME assetbridge-desktop-batch-partial
+    COMMAND assetbridge-desktop
+        --acceptance-input "${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/minimal_triangle.obj"
+        --acceptance-input "${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/textured/rejected/unsupported_semantic.obj"
+        --acceptance-output "${CMAKE_CURRENT_BINARY_DIR}/desktop-batch-partial"
+)
+set_tests_properties(
+    assetbridge-desktop-batch-acceptance-ascii
+    assetbridge-desktop-batch-acceptance-unicode
+    assetbridge-desktop-batch-acceptance-textured
+    assetbridge-desktop-batch-partial
+    PROPERTIES TIMEOUT 45 LABELS "gui;acceptance"
+)
+set_tests_properties(assetbridge-desktop-batch-partial PROPERTIES WILL_FAIL TRUE)
 
 function(add_assetbridge_cli_test test_name)
     add_test(
@@ -722,6 +770,7 @@ set_tests_properties(
     PROPERTIES LABELS "unit"
 )
 set_tests_properties(assetbridge-desktop-state PROPERTIES LABELS "unit;desktop-state")
+set_tests_properties(assetbridge-desktop-batch-state PROPERTIES LABELS "unit;desktop-state")
 set_tests_properties(
     assetbridge-desktop-smoke
     assetbridge-desktop-smoke-150

@@ -124,6 +124,7 @@ std::string_view to_string(BatchInputIssueCode code) noexcept {
     case BatchInputIssueCode::duplicate_input: return "duplicate_input";
     case BatchInputIssueCode::not_obj: return "not_obj";
     case BatchInputIssueCode::job_limit_exceeded: return "job_limit_exceeded";
+    case BatchInputIssueCode::batch_locked: return "batch_locked";
     }
     return "not_obj";
 }
@@ -166,7 +167,7 @@ BatchAddResult BatchCoordinator::add_inputs(
         for (const auto& path : paths) {
             result.issues.push_back({
                 path,
-                BatchInputIssueCode::job_limit_exceeded,
+                BatchInputIssueCode::batch_locked,
                 "The current batch cannot be modified after execution starts."
             });
         }
@@ -205,7 +206,7 @@ BatchAddResult BatchCoordinator::add_inputs(
         }
 
         const BatchJobId id { next_id_++ };
-        jobs_.push_back({ id, path, BatchJobStatus::queued, std::nullopt });
+        jobs_.push_back({ id, path, BatchJobStatus::queued, std::nullopt, std::nullopt });
         known.push_back(key);
         result.accepted.push_back(id);
     }
@@ -244,7 +245,10 @@ bool BatchCoordinator::set_output_root(std::filesystem::path output_root) {
 
 bool BatchCoordinator::can_run() const {
     std::scoped_lock lock(mutex_);
-    return !running_ && !has_run_ && !jobs_.empty() && !output_root_.empty();
+    return !running_ && !has_run_ && !output_root_.empty()
+        && std::any_of(jobs_.begin(), jobs_.end(), [](const BatchJob& job) {
+            return job.status == BatchJobStatus::queued;
+        });
 }
 
 bool BatchCoordinator::running() const {
@@ -269,6 +273,83 @@ BatchSnapshot BatchCoordinator::snapshot() const {
         summarize(jobs_),
         cancel_requested_
     };
+}
+
+bool BatchCoordinator::prepare_job(
+    BatchJobId id,
+    const BatchPreflightExecutor& preflight_executor,
+    const BatchStateCallback& state_callback) {
+    if (!preflight_executor) return false;
+    std::filesystem::path input;
+    {
+        std::scoped_lock lock(mutex_);
+        if (running_ || has_run_) return false;
+        const auto index = job_index(id);
+        if (!index.has_value() || jobs_[*index].status != BatchJobStatus::queued
+            || jobs_[*index].preview.has_value()) {
+            return false;
+        }
+        input = jobs_[*index].input_path;
+    }
+
+    update_status(id, BatchJobStatus::inspecting, state_callback);
+    BatchPreflightResult prepared;
+    try {
+        prepared = preflight_executor(
+            input,
+            [this, id, &state_callback](BatchJobStatus status) {
+                update_status(id, status, state_callback);
+            });
+    } catch (const std::exception& exception) {
+        prepared.status = BatchJobStatus::failed;
+        prepared.error = BatchError { "preflight_exception", exception.what() };
+    } catch (...) {
+        prepared.status = BatchJobStatus::failed;
+        prepared.error = BatchError {
+            "preflight_exception",
+            "The batch preflight executor threw an unknown exception."
+        };
+    }
+
+    if (prepared.status != BatchJobStatus::queued
+        && prepared.status != BatchJobStatus::not_supported
+        && prepared.status != BatchJobStatus::failed) {
+        prepared.status = BatchJobStatus::failed;
+        prepared.error = BatchError {
+            "invalid_preflight_result",
+            "The batch preflight executor returned an invalid terminal state."
+        };
+    }
+
+    std::optional<BatchJob> changed;
+    {
+        std::scoped_lock lock(mutex_);
+        const auto index = job_index(id);
+        if (!index.has_value()) return false;
+        auto& job = jobs_[*index];
+        job.status = prepared.status;
+        job.preview = std::move(prepared.preview);
+        if (prepared.status == BatchJobStatus::not_supported
+            || prepared.status == BatchJobStatus::failed) {
+            BatchJobResult result;
+            result.error = prepared.error.has_value()
+                ? std::move(prepared.error)
+                : std::optional<BatchError>(BatchError {
+                    prepared.status == BatchJobStatus::not_supported
+                        ? "preflight_not_supported" : "preflight_failed",
+                    "The batch preflight did not provide an error message."
+                });
+            result.diagnostics.triangle_count = job.preview->triangle_count;
+            result.diagnostics.material_count = job.preview->material_count;
+            // Preflight only reports referenced/resolved textures. Nothing has been
+            // embedded until a successful conversion produces a GLB.
+            result.diagnostics.embedded_image_count = 0;
+            job.result = std::move(result);
+        }
+        changed = job;
+    }
+    if (changed && state_callback) state_callback(*changed);
+    return true;
 }
 
 void BatchCoordinator::update_status(
@@ -357,7 +438,9 @@ BatchSnapshot BatchCoordinator::run(const BatchStateCallback& state_callback) {
         running_ = true;
         output_root = output_root_;
         execution_order.reserve(jobs_.size());
-        for (const auto& job : jobs_) execution_order.push_back(job.id);
+        for (const auto& job : jobs_) {
+            if (job.status == BatchJobStatus::queued) execution_order.push_back(job.id);
+        }
     }
 
     for (const auto id : execution_order) {

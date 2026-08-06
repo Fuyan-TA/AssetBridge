@@ -135,6 +135,13 @@ int wmain(int argc, wchar_t* argv[]) {
     int failures = 0;
     const AssetConverter converter;
 
+    failures += require(
+        sanitize_output_stem(L"CON") == L"_CON"
+            && sanitize_output_stem(L"Lpt9.data") == L"_Lpt9.data"
+            && sanitize_output_stem(L"asset. ") == L"asset"
+            && sanitize_output_stem(L"bad:name") == L"bad_name",
+        "Windows output stems should sanitize reserved names and invalid suffixes");
+
     const auto run_conversion = [&converter, &output_root](
                                     std::string_view subtest,
                                     const std::filesystem::path& input,

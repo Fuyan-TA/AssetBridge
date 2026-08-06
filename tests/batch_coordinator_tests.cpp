@@ -97,6 +97,45 @@ int main() {
             && mixed_add.issues[1].code == BatchInputIssueCode::not_obj,
         "duplicate and non-OBJ inputs need stable issue codes");
 
+    BatchCoordinator prepared([](const auto& request, const auto&) {
+        return success_result(request);
+    });
+    const auto prepared_add = prepared.add_inputs({ L"safe.obj", L"blocked.obj" });
+    const auto preflight_executor = [](const std::filesystem::path& input,
+                                        const BatchProgressCallback& progress) {
+        progress(BatchJobStatus::preflighting);
+        BatchPreflightResult result;
+        result.preview.mesh_count = 2;
+        result.preview.triangle_count = 4;
+        if (input.filename() == L"blocked.obj") {
+            result.status = BatchJobStatus::not_supported;
+            result.error = BatchError {
+                "route_feature_unverified", "Synthetic unsupported feature."
+            };
+            result.preview.diagnostics.push_back(*result.error);
+        } else {
+            result.status = BatchJobStatus::queued;
+            result.preview.preflight_safe = true;
+        }
+        return result;
+    };
+    failures += require(
+        prepared.prepare_job(prepared_add.accepted[0], preflight_executor)
+            && prepared.prepare_job(prepared_add.accepted[1], preflight_executor),
+        "preflight results should be attached before conversion");
+    (void)prepared.set_output_root(L"prepared-output");
+    const auto prepared_snapshot = prepared.run();
+    failures += require(
+        prepared_snapshot.status == BatchRunStatus::partial
+            && prepared_snapshot.summary.succeeded == 1
+            && prepared_snapshot.summary.not_supported == 1,
+        "preflight-blocked jobs should remain terminal and be skipped by conversion");
+    failures += require(
+        prepared_snapshot.jobs[0].preview->preflight_safe
+            && prepared_snapshot.jobs[1].preview->diagnostics.front().code
+                == "route_feature_unverified",
+        "prepared preview data should remain available to UI consumers");
+
     std::vector<std::filesystem::path> over_limit;
     over_limit.reserve(maximum_batch_jobs + 1);
     for (std::size_t index = 0; index <= maximum_batch_jobs; ++index) {

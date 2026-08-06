@@ -175,6 +175,66 @@ batch::BatchExecutionResult execute_asset_job(
     return result;
 }
 
+batch::BatchPreflightResult preflight_asset_job(
+    const std::filesystem::path& input,
+    const batch::BatchProgressCallback& progress) {
+    batch::BatchPreflightResult result;
+    const AssetInspector inspector;
+    const auto inspection = inspector.inspect(input);
+    if (!inspection) {
+        result.status = batch::BatchJobStatus::failed;
+        result.error = batch::BatchError {
+            std::string(to_string(inspection.error_code)),
+            inspection.error_message
+        };
+        return result;
+    }
+    if (inspection.summary.has_value()) {
+        result.preview.mesh_count = inspection.summary->mesh_count;
+        result.preview.face_count = inspection.summary->face_count;
+        result.preview.triangle_count = inspection.summary->triangle_count;
+        result.preview.material_count = inspection.summary->material_count;
+    }
+
+    if (progress) progress(batch::BatchJobStatus::preflighting);
+    const auto preflight = create_preflight_report(input, FormatId::glb2);
+    if (!preflight) {
+        result.status = batch::BatchJobStatus::failed;
+        result.error = batch::BatchError {
+            std::string(to_string(preflight.error_code)),
+            preflight.error_message
+        };
+        return result;
+    }
+    if (preflight.companions.has_value()) {
+        result.preview.texture_count = preflight.companions->textures.size();
+    }
+    for (const auto& loss : preflight.decision.losses) {
+        result.preview.diagnostics.push_back({ loss.code, loss.reason });
+    }
+    result.preview.preflight_safe =
+        preflight.decision.overall_result == OverallResult::safe;
+    if (result.preview.preflight_safe) {
+        result.status = batch::BatchJobStatus::queued;
+        return result;
+    }
+
+    const auto loss = preflight.decision.losses.empty()
+        ? nullptr
+        : &preflight.decision.losses.front();
+    const std::string code = loss == nullptr ? "preflight_blocked" : loss->code;
+    result.status = is_unverified_loss(code)
+        ? batch::BatchJobStatus::not_supported
+        : batch::BatchJobStatus::failed;
+    result.error = batch::BatchError {
+        code,
+        loss == nullptr
+            ? "The asset did not pass the verified OBJ-to-GLB2 preflight."
+            : loss->reason
+    };
+    return result;
+}
+
 class TemporaryReportFile {
 public:
     explicit TemporaryReportFile(std::filesystem::path path) : path_(std::move(path)) {}
@@ -195,6 +255,10 @@ batch::BatchExecutor make_asset_batch_executor() {
     return execute_asset_job;
 }
 
+batch::BatchPreflightExecutor make_asset_batch_preflight_executor() {
+    return preflight_asset_job;
+}
+
 bool write_batch_report(
     const batch::BatchSnapshot& snapshot,
     std::string& error_message) {
@@ -212,6 +276,7 @@ bool write_batch_report(
 
     const auto final_path = snapshot.output_root / "batch-report.json";
     const auto temporary_path = snapshot.output_root / ".assetbridge-batch-report.tmp";
+    const auto serialized_report = batch_report_to_json(snapshot);
     TemporaryReportFile temporary(temporary_path);
     {
         std::ofstream output(temporary.path(), std::ios::binary | std::ios::trunc);
@@ -219,7 +284,7 @@ bool write_batch_report(
             error_message = "Could not open the temporary batch report.";
             return false;
         }
-        output << batch_report_to_json(snapshot) << '\n';
+        output << serialized_report << '\n';
         if (!output) {
             error_message = "Could not finish writing the temporary batch report.";
             return false;
