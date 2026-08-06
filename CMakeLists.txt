@@ -44,9 +44,23 @@ target_include_directories(assetbridge-product
 
 target_compile_options(assetbridge-product PRIVATE /W4 /permissive- /utf-8)
 
+add_library(assetbridge-batch STATIC
+    src/batch/batch_coordinator.cpp
+)
+
+target_include_directories(assetbridge-batch
+    PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+target_link_libraries(assetbridge-batch PUBLIC assetbridge-product)
+target_compile_options(assetbridge-batch PRIVATE /W4 /permissive- /utf-8)
+
 add_library(assetbridge-core STATIC
     src/core/asset_converter.cpp
     src/core/asset_inspector.cpp
+    src/core/batch_processor.cpp
+    src/core/batch_serializer.cpp
     src/core/companion_resolver.cpp
     src/core/conversion_serializer.cpp
     src/core/glb_container.cpp
@@ -66,6 +80,7 @@ target_include_directories(assetbridge-core
 target_link_libraries(assetbridge-core
     PRIVATE
         assetbridge-product
+        assetbridge-batch
         assimp::assimp
         nlohmann_json::nlohmann_json
 )
@@ -73,6 +88,7 @@ target_link_libraries(assetbridge-core
 target_compile_options(assetbridge-core PRIVATE /W4 /permissive- /utf-8)
 
 add_library(assetbridge-desktop-model STATIC
+    src/desktop/desktop_batch_state.cpp
     src/desktop/desktop_app_state.cpp
 )
 
@@ -88,7 +104,8 @@ add_executable(assetbridge-cli
     apps/assetbridge-cli/main.cpp
 )
 
-target_link_libraries(assetbridge-cli PRIVATE assetbridge-core assetbridge-version)
+target_link_libraries(assetbridge-cli
+    PRIVATE assetbridge-core assetbridge-batch assetbridge-version)
 target_compile_options(assetbridge-cli PRIVATE /W4 /permissive- /utf-8)
 
 add_executable(assetbridge-desktop WIN32
@@ -189,6 +206,34 @@ add_executable(assetbridge-desktop-state-tests
 target_link_libraries(assetbridge-desktop-state-tests PRIVATE assetbridge-desktop-model)
 target_compile_options(assetbridge-desktop-state-tests PRIVATE /W4 /permissive- /utf-8)
 
+add_executable(assetbridge-desktop-batch-state-tests
+    tests/desktop_batch_state_tests.cpp
+)
+
+target_link_libraries(assetbridge-desktop-batch-state-tests
+    PRIVATE assetbridge-desktop-model assetbridge-batch)
+target_compile_options(assetbridge-desktop-batch-state-tests PRIVATE /W4 /permissive- /utf-8)
+
+add_executable(assetbridge-batch-coordinator-tests
+    tests/batch_coordinator_tests.cpp
+)
+
+target_link_libraries(assetbridge-batch-coordinator-tests PRIVATE assetbridge-batch)
+target_compile_options(assetbridge-batch-coordinator-tests PRIVATE /W4 /permissive- /utf-8)
+
+add_executable(assetbridge-batch-conversion-tests
+    tests/batch_conversion_tests.cpp
+)
+
+target_link_libraries(assetbridge-batch-conversion-tests
+    PRIVATE
+        assetbridge-core
+        assetbridge-batch
+        assetbridge-desktop-model
+        nlohmann_json::nlohmann_json
+)
+target_compile_options(assetbridge-batch-conversion-tests PRIVATE /W4 /permissive- /utf-8)
+
 add_test(NAME assetbridge-core-inspector COMMAND assetbridge-tests)
 set_tests_properties(assetbridge-core-inspector PROPERTIES
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
@@ -234,6 +279,14 @@ set_tests_properties(assetbridge-scene-semantics PROPERTIES
 )
 
 add_test(NAME assetbridge-desktop-state COMMAND assetbridge-desktop-state-tests)
+add_test(NAME assetbridge-desktop-batch-state COMMAND assetbridge-desktop-batch-state-tests)
+add_test(NAME assetbridge-batch-coordinator COMMAND assetbridge-batch-coordinator-tests)
+add_test(
+    NAME assetbridge-batch-conversion
+    COMMAND assetbridge-batch-conversion-tests
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/assets"
+        "${CMAKE_CURRENT_BINARY_DIR}/batch-conversion-output"
+)
 add_test(NAME assetbridge-desktop-smoke COMMAND assetbridge-desktop --smoke-test)
 add_test(
     NAME assetbridge-desktop-smoke-150
@@ -288,6 +341,63 @@ set_tests_properties(
     PROPERTIES TIMEOUT 30
 )
 set_tests_properties(assetbridge-desktop-reject-unverified PROPERTIES WILL_FAIL TRUE)
+
+add_test(
+    NAME assetbridge-desktop-batch-acceptance-ascii
+    COMMAND assetbridge-desktop
+        --acceptance-input "${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/minimal_triangle.obj"
+        --acceptance-input "${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/multi_two_triangles.obj"
+        --acceptance-output "${CMAKE_CURRENT_BINARY_DIR}/desktop-batch-acceptance-ascii"
+)
+add_test(
+    NAME assetbridge-desktop-batch-acceptance-unicode
+    COMMAND assetbridge-desktop
+        --acceptance-input "${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/中文三角形.obj"
+        --acceptance-input "${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/中文多网格.obj"
+        --acceptance-output "${CMAKE_CURRENT_BINARY_DIR}/desktop-batch-acceptance-unicode"
+)
+add_test(
+    NAME assetbridge-desktop-batch-acceptance-textured
+    COMMAND assetbridge-desktop
+        --acceptance-input "${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/textured/probe/texture_behavior.obj"
+        --acceptance-input "${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/textured/verified/shared_texture.obj"
+        --acceptance-output "${CMAKE_CURRENT_BINARY_DIR}/desktop-batch-acceptance-textured"
+)
+add_test(
+    NAME assetbridge-desktop-batch-partial
+    COMMAND assetbridge-desktop
+        --acceptance-input "${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/minimal_triangle.obj"
+        --acceptance-input "${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/textured/rejected/unsupported_semantic.obj"
+        --acceptance-output "${CMAKE_CURRENT_BINARY_DIR}/desktop-batch-partial"
+)
+add_test(
+    NAME assetbridge-desktop-batch-same-stem
+    COMMAND assetbridge-desktop
+        --acceptance-input "${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/batch/same-a/same.obj"
+        --acceptance-input "${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/batch/same-b/same.obj"
+        --acceptance-output "${CMAKE_CURRENT_BINARY_DIR}/desktop-batch-same-stem"
+)
+add_test(
+    NAME assetbridge-desktop-batch-cancel-after-current
+    COMMAND assetbridge-desktop
+        --acceptance-input "${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/minimal_triangle.obj"
+        --acceptance-input "${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/multi_two_triangles.obj"
+        --acceptance-input "${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/multi_triangle_quad.obj"
+        --acceptance-input "${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/textured/probe/texture_behavior.obj"
+        --acceptance-input "${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/textured/verified/shared_texture.obj"
+        --acceptance-output "${CMAKE_CURRENT_BINARY_DIR}/desktop-batch-cancel-after-current"
+        --acceptance-cancel-after-current
+)
+set_tests_properties(
+    assetbridge-desktop-batch-acceptance-ascii
+    assetbridge-desktop-batch-acceptance-unicode
+    assetbridge-desktop-batch-acceptance-textured
+    assetbridge-desktop-batch-partial
+    assetbridge-desktop-batch-same-stem
+    assetbridge-desktop-batch-cancel-after-current
+    PROPERTIES TIMEOUT 45 LABELS "gui;acceptance"
+)
+set_tests_properties(assetbridge-desktop-batch-partial PROPERTIES WILL_FAIL TRUE)
 
 function(add_assetbridge_cli_test test_name)
     add_test(
@@ -590,6 +700,74 @@ add_assetbridge_cli_test(assetbridge-cli-convert-unknown-target-json
     "-DASSETBRIDGE_VALIDATE_JSON=conversion_unknown"
 )
 
+add_assetbridge_cli_test(assetbridge-cli-batch-text-success
+    "-DASSETBRIDGE_COMMAND=batch"
+    "-DASSETBRIDGE_BATCH_INPUTS=${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/minimal_triangle.obj|${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/中文三角形.obj"
+    "-DASSETBRIDGE_TARGET=glb"
+    "-DASSETBRIDGE_OUTPUT=${CMAKE_CURRENT_BINARY_DIR}/cli-batch-text-success"
+    "-DASSETBRIDGE_CLEAN_OUTPUT=TRUE"
+    "-DASSETBRIDGE_EXPECTED_EXIT=0"
+    "-DASSETBRIDGE_EXPECTED_STDOUT=Batch Status: success|Total: 2|Succeeded: 2|job-000001|job-000002"
+)
+
+add_assetbridge_cli_test(assetbridge-cli-batch-json-success
+    "-DASSETBRIDGE_COMMAND=batch"
+    "-DASSETBRIDGE_BATCH_INPUTS=${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/minimal_triangle.obj|${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/中文三角形.obj"
+    "-DASSETBRIDGE_TARGET=GLB2"
+    "-DASSETBRIDGE_OUTPUT=${CMAKE_CURRENT_BINARY_DIR}/cli-batch-json-success"
+    "-DASSETBRIDGE_CLEAN_OUTPUT=TRUE"
+    "-DASSETBRIDGE_OPTION=--json"
+    "-DASSETBRIDGE_EXPECTED_EXIT=0"
+    "-DASSETBRIDGE_VALIDATE_JSON=batch_success"
+    "-DASSETBRIDGE_EXPECTED_BATCH_STATUS=success"
+)
+
+add_assetbridge_cli_test(assetbridge-cli-batch-json-partial
+    "-DASSETBRIDGE_COMMAND=batch"
+    "-DASSETBRIDGE_BATCH_INPUTS=${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/minimal_triangle.obj|${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/invalid.obj|${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/textured/rejected/unsupported_semantic.obj"
+    "-DASSETBRIDGE_TARGET=glb"
+    "-DASSETBRIDGE_OUTPUT=${CMAKE_CURRENT_BINARY_DIR}/cli-batch-json-partial"
+    "-DASSETBRIDGE_CLEAN_OUTPUT=TRUE"
+    "-DASSETBRIDGE_OPTION=--json"
+    "-DASSETBRIDGE_EXPECTED_EXIT=1"
+    "-DASSETBRIDGE_VALIDATE_JSON=batch_partial"
+    "-DASSETBRIDGE_EXPECTED_BATCH_STATUS=partial"
+)
+
+add_assetbridge_cli_test(assetbridge-cli-batch-same-stem-json
+    "-DASSETBRIDGE_COMMAND=batch"
+    "-DASSETBRIDGE_BATCH_INPUTS=${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/batch/same-a/same.obj|${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/batch/same-b/same.obj"
+    "-DASSETBRIDGE_TARGET=glb"
+    "-DASSETBRIDGE_OUTPUT=${CMAKE_CURRENT_BINARY_DIR}/cli-batch-same-stem"
+    "-DASSETBRIDGE_CLEAN_OUTPUT=TRUE"
+    "-DASSETBRIDGE_OPTION=--json"
+    "-DASSETBRIDGE_EXPECTED_EXIT=0"
+    "-DASSETBRIDGE_VALIDATE_JSON=batch_success"
+    "-DASSETBRIDGE_EXPECTED_BATCH_STATUS=success"
+)
+
+add_assetbridge_cli_test(assetbridge-cli-batch-no-input-json
+    "-DASSETBRIDGE_COMMAND=batch"
+    "-DASSETBRIDGE_TARGET=glb"
+    "-DASSETBRIDGE_OUTPUT=${CMAKE_CURRENT_BINARY_DIR}/cli-batch-no-input"
+    "-DASSETBRIDGE_CLEAN_OUTPUT=TRUE"
+    "-DASSETBRIDGE_EXPECT_EMPTY_OUTPUT=TRUE"
+    "-DASSETBRIDGE_OPTION=--json"
+    "-DASSETBRIDGE_EXPECTED_EXIT=2"
+    "-DASSETBRIDGE_VALIDATE_JSON=batch_argument_error"
+)
+
+add_assetbridge_cli_test(assetbridge-cli-batch-non-obj
+    "-DASSETBRIDGE_COMMAND=batch"
+    "-DASSETBRIDGE_BATCH_INPUTS=${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/not-an-obj.glb"
+    "-DASSETBRIDGE_TARGET=glb"
+    "-DASSETBRIDGE_OUTPUT=${CMAKE_CURRENT_BINARY_DIR}/cli-batch-non-obj"
+    "-DASSETBRIDGE_CLEAN_OUTPUT=TRUE"
+    "-DASSETBRIDGE_EXPECT_EMPTY_OUTPUT=TRUE"
+    "-DASSETBRIDGE_EXPECTED_EXIT=2"
+    "-DASSETBRIDGE_EXPECTED_STDERR=not_obj|no_valid_input"
+)
+
 add_test(
     NAME assetbridge-cli-version
     COMMAND assetbridge-cli --version
@@ -607,9 +785,12 @@ set_tests_properties(
     assetbridge-companion-resolver
     assetbridge-texture-pipeline
     assetbridge-scene-semantics
+    assetbridge-batch-coordinator
+    assetbridge-batch-conversion
     PROPERTIES LABELS "unit"
 )
 set_tests_properties(assetbridge-desktop-state PROPERTIES LABELS "unit;desktop-state")
+set_tests_properties(assetbridge-desktop-batch-state PROPERTIES LABELS "unit;desktop-state")
 set_tests_properties(
     assetbridge-desktop-smoke
     assetbridge-desktop-smoke-150
@@ -631,7 +812,7 @@ foreach(ASSETBRIDGE_TEST IN LISTS ASSETBRIDGE_REGISTERED_TESTS)
         set_property(TEST "${ASSETBRIDGE_TEST}" APPEND PROPERTY LABELS "cli")
         set_property(TEST "${ASSETBRIDGE_TEST}" PROPERTY TIMEOUT 60)
     endif()
-    if(ASSETBRIDGE_TEST MATCHES "^assetbridge-cli-convert-")
+    if(ASSETBRIDGE_TEST MATCHES "^assetbridge-cli-(convert|batch)-")
         set_property(TEST "${ASSETBRIDGE_TEST}" APPEND PROPERTY LABELS "acceptance")
     endif()
 endforeach()

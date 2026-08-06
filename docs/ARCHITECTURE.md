@@ -7,8 +7,9 @@ in data and tests, not an accidental consequence of what Assimp can parse.
 ```mermaid
 flowchart TD
     Desktop["Desktop UI<br/>SDL3 + Dear ImGui + DX11"] --> DesktopModel["Desktop state and worker boundary"]
-    CLI["CLI"] --> Core["assetbridge-core<br/>inspect, preflight orchestration, convert, validate"]
-    DesktopModel --> Core
+    CLI["CLI"] --> Batch["assetbridge-batch<br/>queue, state machine, sequential policy"]
+    DesktopModel --> Batch
+    Batch --> Core["assetbridge-core<br/>inspect, preflight orchestration, convert, validate"]
     Core --> Product["assetbridge-product<br/>format capabilities and route registry"]
     Core --> Companion["Companion resolver<br/>MTL and texture security boundary"]
     Core --> Container["GLB container validator<br/>JSON + BIN evidence"]
@@ -55,6 +56,20 @@ payloads and rewrites verified material references to `*N`. A separate GLB
 container validator checks JSON/BIN structure and exact image bytes before the
 normal Assimp reimport path.
 
+### Batch orchestration
+
+`assetbridge-batch` is a GUI-independent product workflow layer. It owns stable
+job IDs, canonical-path deduplication, the 256-job limit, per-job states,
+sequential execution, failure isolation, summary accounting, and
+Cancel-After-Current semantics. Injected executor and preflight contracts let
+pure tests run without Assimp or a window.
+
+Core adapts those contracts to inspection, preflight, transactional conversion,
+reimport validation, and report data. CLI and desktop use the same coordinator;
+neither maintains a second conversion loop. A root `assetbridge.batch.v1`
+report aggregates the existing per-asset `assetbridge.conversion.v1` reports
+without changing any existing v1 schema.
+
 ### Desktop and platform
 
 The desktop executable draws state and sends bounded requests to Core. It never
@@ -89,11 +104,13 @@ subsequent suffixes.
 ## Thread ownership
 
 The SDL event loop, Dear ImGui calls, and DirectX calls stay on the main thread.
-Inspection and conversion run on one worker thread. The worker publishes a
-completed result through controlled state protected by atomics and a mutex.
-The UI reports real coarse stages—Inspecting, Converting, and Validating—rather
-than inventing a per-vertex percentage. Only one task may run at a time, and
-shutdown joins the worker before graphics and window teardown.
+Queue preflight and conversion run on one worker thread. Jobs execute
+sequentially to isolate Assimp work and output transactions. The worker
+publishes completed snapshots through controlled state protected by atomics and
+a mutex. The UI reports real coarse stages rather than inventing a per-vertex
+percentage. Shutdown joins the active job before graphics and window teardown.
+Cancel After Current never interrupts a transaction: it lets the active asset
+finish, then marks the remaining queued jobs canceled.
 
 ## Version and package boundaries
 

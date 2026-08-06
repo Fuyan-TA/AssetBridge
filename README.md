@@ -15,6 +15,28 @@ OBJ-to-GLB route that has automated and local acceptance evidence.
 
 Local file-system paths are redacted in documentation screenshots.
 
+## Unreleased batch workflow
+
+The current development branch adds sequential batch orchestration without
+expanding the verified conversion route. Desktop drag-and-drop and the native
+file dialog accept multiple OBJ files, preflight each job independently, and
+show a per-asset queue. `Convert All to GLB` processes one job at a time; a
+failed or unsupported asset does not stop later jobs. `Cancel After Current`
+finishes the active transaction and marks the remaining queued jobs canceled.
+
+The CLI exposes the same coordinator and stable JSON schema:
+
+```powershell
+assetbridge-cli batch --input .\a.obj --input .\b.obj `
+  --to glb --output .\converted --json
+```
+
+The root output contains `batch-report.json`; each successful job retains its
+existing non-overwriting per-asset directory and `conversion-report.json`.
+Batch support does not enable another source format, target format, texture
+semantic, hierarchy mode, or `--allow-lossy` behavior. The product version
+remains 0.2.0 until a separately authorized release-preparation phase.
+
 ## v0.2.0 verified scope
 
 | Area | Verified v0.2.0 boundary |
@@ -54,13 +76,15 @@ detected:
 
 1. Extract the complete Windows x64 ZIP; keep the EXE and DLL files together.
 2. Run `assetbridge-desktop.exe`.
-3. Drop one OBJ file into the window or use **Choose OBJ**.
-4. Review the asset summary and preflight result.
-5. Choose an output directory and select **Convert to GLB**.
-6. After successful reimport validation, open the output folder or JSON report.
+3. Drop one or more OBJ files into the window or use **Choose OBJ Files**.
+4. Review each queue item's statistics, preflight result, and diagnostics.
+5. Remove unwanted jobs, choose one shared output root, and select
+   **Convert All to GLB**.
+6. Review the final success/not-supported/failed/canceled summary and the root
+   batch report.
 
-AssetBridge accepts one OBJ at a time. Dropping multiple files or a non-OBJ file is
-rejected before conversion.
+The queue accepts at most 256 unique canonical OBJ paths. It is immutable while
+conversion is running. A single OBJ follows the same path as a one-item batch.
 
 ### CLI
 
@@ -70,6 +94,7 @@ assetbridge-cli inspect .\model.obj
 assetbridge-cli inspect .\model.obj --json
 assetbridge-cli preflight .\model.obj --target glb --json
 assetbridge-cli convert .\model.obj --to glb --output .\converted --json
+assetbridge-cli batch --input .\a.obj --input .\b.obj --to glb --output .\converted --json
 assetbridge-cli capabilities --json
 ```
 
@@ -90,6 +115,20 @@ If the final directory exists, AssetBridge selects `<source-stem>_2`, `_3`, and
 so on. Export and validation happen in a temporary sibling directory. The final
 directory appears only after every validation check passes.
 
+Batch output adds one root-level report while preserving the same transaction
+boundary for every asset:
+
+```text
+<output-root>/
+├── batch-report.json
+├── a/
+│   ├── a.glb
+│   └── conversion-report.json
+└── b/
+    ├── b.glb
+    └── conversion-report.json
+```
+
 CLI exit codes are stable:
 
 | Code | Meaning |
@@ -97,6 +136,10 @@ CLI exit codes are stable:
 | 0 | Command completed successfully. |
 | 1 | File, import, preflight, export, or validation error. |
 | 2 | Invalid command, arguments, or target format. |
+
+For `batch`, exit code `0` means every job succeeded, `1` means partial or
+complete job failure/cancellation, and `2` means invalid arguments or no valid
+OBJ input.
 
 ## Build from source
 
@@ -151,26 +194,32 @@ See [Architecture](docs/ARCHITECTURE.md) and
 These are measurements, not cross-machine guarantees. No system cache was
 cleared and no Windows security policy was changed.
 
-| Metric | v0.1.0 recorded | v0.2.0 candidate | Change |
+| Metric | v0.2.0 recorded | Unreleased batch candidate | Change from v0.2.0 |
 |---|---:|---:|---:|
-| Desktop EXE | 745,984 bytes | 865,792 bytes | +119,808 bytes |
-| CLI EXE | 376,320 bytes | 496,640 bytes | +120,320 bytes |
+| Desktop EXE | 865,792 bytes | 944,128 bytes | +78,336 bytes |
+| CLI EXE | 496,640 bytes | 561,664 bytes | +65,024 bytes |
 | DLL count | 11 | 11 | 0 |
-| Portable directory | 10,363,188 bytes | 10,603,313 bytes | +240,125 bytes |
-| ZIP | 4,347,759 bytes | 4,461,429 bytes | +113,670 bytes |
-| First measured launch to responsive window | 215.983 ms | 247.930 ms | +31.947 ms |
-| Cached launch median, 5 runs | 183.421 ms | 170.737 ms | -12.684 ms |
-| Idle Working Set median, 5 runs | 71,897,088 bytes | 71,917,568 bytes (68.59 MiB) | +20,480 bytes |
-| Idle Private Memory median, 5 runs | Not recorded | 79,364,096 bytes (75.69 MiB) | Not comparable |
+| Portable directory | 10,603,313 bytes | 10,746,673 bytes | +143,360 bytes |
+| ZIP | 4,461,429 bytes | 4,528,346 bytes | +66,917 bytes |
+| First measured launch to responsive window | 247.930 ms | 237.840 ms | -10.090 ms |
+| Cached launch median, 5 runs | 170.737 ms | 178.634 ms | +7.897 ms |
+| Idle Working Set median, 5 runs | 71,917,568 bytes | 71,618,560 bytes (68.30 MiB) | -299,008 bytes |
+| Idle Private Memory median, 5 runs | 79,364,096 bytes | 82,038,784 bytes (78.24 MiB) | +2,674,688 bytes |
+
+Ten copied instances of the self-authored minimal OBJ completed sequentially in
+235.050 ms. The one-job GUI run peaked at 73,928,704 bytes Working Set; the
+ten-job run peaked at 87,666,688 bytes and returned to 74,014,720 bytes after
+completion. All ten GLBs and reports were produced, and no transaction directory
+remained. These numbers demonstrate the measured candidate only; they are not a
+throughput guarantee for larger assets.
 
 Measurement machine: AMD Ryzen 5 9600X, 12 logical processors, Windows build
 10.0.26200.8875. Launch timing is measured from process creation until a
 responsive main window exists. Idle memory is sampled 1.5 seconds after that
-point with no asset loaded. The v0.2.0 measurement state is the
-`release/v0.2.0` preparation tree based on merge commit
-`5e638a19638f8fdb5bfc9d1d0527d36e77ad410d`. The v0.1.0 ZIP size is the
-published Release asset size; the other v0.1.0 values are retained release
-evidence.
+point with no asset loaded. The unreleased measurement uses the
+`feat/v0.3-batch-workflows` development tree based on v0.2.0 commit
+`5175bde472936f56a740b0797b52d9a46929379b`. The package keeps version 0.2.0
+because release preparation has not started.
 
 The complete DLL and validation evidence is summarized in the
 [portfolio case study](docs/PORTFOLIO_CASE_STUDY.md).

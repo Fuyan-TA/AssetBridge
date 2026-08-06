@@ -19,7 +19,7 @@ is rejected, and prove that accepted output remains structurally usable?
 - Core conversion code remains reusable by CLI and independent of GUI code.
 - Product support is narrower than Assimp's importer/exporter list.
 - v0.1.0 supports only tested static OBJ→GLB2 cases.
-- No 3D viewport, batch queue, telemetry, updater, or background service.
+- No 3D viewport, telemetry, updater, or background service.
 - Portable ZIP target below 50 MB, cached launch below one second, and idle
   Working Set below 100 MB.
 
@@ -106,6 +106,28 @@ This expands one route, not the general format matrix. Normal, bump, opacity,
 metallic, roughness, specular, emissive, transformed, or transcoded textures
 remain unsupported until separate product rules and validation evidence exist.
 
+## Unreleased Batch Workflow
+
+The batch extension changes orchestration, not format support. An independent
+coordinator owns stable job identity, canonical-path deduplication, state
+transitions, sequential execution, partial-success accounting, and
+cancel-after-current policy. Core supplies an injected adapter to the existing
+verified OBJ→GLB2 transaction. CLI and desktop consume the same workflow rather
+than implementing separate conversion loops.
+
+Sequential execution is deliberate. The first implementation favors isolation,
+predictable memory use, deterministic output collision handling, and readable
+failure evidence over throughput. A failed import or unsupported asset is a
+terminal job result; later jobs continue. Cancellation never tears down an
+active exporter or leaves a half-committed directory.
+
+The desktop queue exposes actual stages and per-asset statistics. It does not
+report synthetic percentage progress. The batch report aggregates results while
+preserving detailed per-asset reports. This is closer to production pipeline
+coordination than wrapping a converter in a multi-file loop, but it still lacks
+persistent queues, retry/resume, bounded parallelism, and studio asset-database
+integration.
+
 ## Development Method
 
 The implementation was developed with AI-assisted coding under a human-defined
@@ -132,6 +154,30 @@ No system cache or security setting was manipulated for the measurements. The
 first measured run is recorded separately; the cached result is the median of
 five subsequent launches. The v0.1.0 package includes the MSVC runtime and all
 redistributed license texts rather than reducing size by omitting dependencies.
+
+The unreleased batch candidate, measured on the same machine and without cache
+or security-policy manipulation, produced the following evidence:
+
+| Evidence | Result |
+|---|---:|
+| Desktop EXE | 944,128 bytes |
+| CLI EXE | 561,664 bytes |
+| Portable directory | 10,746,673 bytes |
+| ZIP | 4,528,346 bytes |
+| Runtime DLL count | 11 |
+| First measured responsive window | 237.840 ms |
+| Five cached launches, median | 178.634 ms |
+| Five idle Working Set samples, median | 68.30 MiB |
+| Five idle Private Memory samples, median | 78.24 MiB |
+| Ten minimal jobs, sequential CLI batch | 235.050 ms |
+| One-job GUI peak Working Set | 73,928,704 bytes |
+| Ten-job GUI peak Working Set | 87,666,688 bytes |
+| Ten-job GUI post-completion Working Set | 74,014,720 bytes |
+
+The ten-job measurement used separate copied instances of the repository's
+self-authored minimal OBJ and produced ten GLBs plus ten conversion reports.
+No transaction directory remained. This is evidence for small fixtures, not a
+claim about large-asset throughput. The DLL set did not change from v0.2.0.
 
 ## What I Learned
 

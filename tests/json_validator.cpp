@@ -6,6 +6,7 @@
 #include <initializer_list>
 #include <iostream>
 #include <iterator>
+#include <set>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -812,10 +813,130 @@ void validate_conversion_companion_error(
         "conversion texture diagnostics are missing the companion issue code");
 }
 
+void validate_batch_report(
+    const Json& report,
+    std::string_view expected_status,
+    const std::filesystem::path& output_root,
+    const std::vector<std::filesystem::path>& inputs) {
+    require_exact_keys(report, {
+        "schema", "status", "target_format", "output_root", "summary", "jobs"
+    });
+    require(report.at("schema") == "assetbridge.batch.v1", "batch schema mismatch");
+    require(report.at("status") == std::string(expected_status), "batch status mismatch");
+    require(report.at("target_format") == "glb2", "batch target must be canonical glb2");
+    require(report.at("output_root").is_string(), "batch output_root must be a string");
+
+    const auto& summary = report.at("summary");
+    require_exact_keys(summary, {
+        "total", "succeeded", "not_supported", "failed", "canceled"
+    });
+    for (const auto field : {
+             "total", "succeeded", "not_supported", "failed", "canceled" }) {
+        require(summary.at(field).is_number_unsigned(), "batch summary count must be unsigned");
+    }
+    require(summary.at("total") == inputs.size(), "batch total does not match input count");
+
+    const auto& jobs = report.at("jobs");
+    require(jobs.is_array() && jobs.size() == inputs.size(), "batch jobs must match inputs");
+    std::uint64_t succeeded = 0;
+    std::uint64_t not_supported = 0;
+    std::uint64_t failed = 0;
+    std::uint64_t canceled = 0;
+    std::set<std::string> successful_output_directories;
+    for (std::size_t index = 0; index < jobs.size(); ++index) {
+        const auto& job = jobs.at(index);
+        require_exact_keys(job, {
+            "id", "input_path", "status", "route", "output", "error",
+            "duration_ms", "diagnostics"
+        });
+        const auto id_number = std::to_string(index + 1);
+        require(job.at("id") == "job-" + std::string(6 - id_number.size(), '0') + id_number,
+            "batch job ID mismatch");
+        require(job.at("input_path") == expected_report_path(inputs[index]),
+            "batch input path mismatch");
+        require(job.at("duration_ms").is_number(), "batch duration must be numeric");
+        require(std::isfinite(job.at("duration_ms").get<double>()),
+            "batch duration must be finite");
+
+        const auto& route = job.at("route");
+        require_exact_keys(route, { "source_format_id", "target_format_id" });
+        require(route.at("source_format_id") == "obj"
+                && route.at("target_format_id") == "glb2",
+            "batch route must remain obj to glb2");
+        const auto& output = job.at("output");
+        require_exact_keys(output, { "directory", "glb", "conversion_report" });
+        const auto& diagnostics = job.at("diagnostics");
+        require_exact_keys(diagnostics, {
+            "triangle_count", "material_count", "embedded_image_count",
+            "validation_failure_count"
+        });
+        for (const auto field : {
+                 "triangle_count", "material_count", "embedded_image_count",
+                 "validation_failure_count" }) {
+            require(diagnostics.at(field).is_number_unsigned(),
+                "batch diagnostic count must be unsigned");
+        }
+
+        const auto status = job.at("status").get<std::string>();
+        if (status == "success") {
+            ++succeeded;
+            require(job.at("error").is_null(), "successful batch job error must be null");
+            require(output.at("directory").is_string()
+                    && output.at("glb").is_string()
+                    && output.at("conversion_report").is_string(),
+                "successful batch job output paths must be strings");
+            require(successful_output_directories.insert(
+                    output.at("directory").get<std::string>()).second,
+                "successful batch jobs must not share an output directory");
+            require(diagnostics.at("validation_failure_count") == 0,
+                "successful batch job must have no validation failures");
+        } else {
+            if (status == "not_supported") ++not_supported;
+            else if (status == "failed") ++failed;
+            else if (status == "canceled") ++canceled;
+            else require(false, "unexpected terminal batch status");
+            require(job.at("error").is_object(), "non-success job needs structured error");
+            require(job.at("error").at("code").is_string()
+                    && !job.at("error").at("code").get<std::string>().empty(),
+                "non-success job needs a stable error code");
+            require(output.at("directory").is_null()
+                    && output.at("glb").is_null()
+                    && output.at("conversion_report").is_null(),
+                "non-success job output paths must be null");
+        }
+    }
+    require(summary.at("succeeded") == succeeded
+            && summary.at("not_supported") == not_supported
+            && summary.at("failed") == failed
+            && summary.at("canceled") == canceled,
+        "batch summary does not match job terminal states");
+
+    std::ifstream root_report(output_root / "batch-report.json", std::ios::binary);
+    require(static_cast<bool>(root_report), "batch-report.json was not written");
+    require(Json::parse(root_report) == report, "stdout and batch-report.json must be identical");
+}
+
+void validate_batch_argument_error(const Json& report) {
+    require_exact_keys(report, {
+        "schema", "status", "target_format", "output_root", "summary", "jobs", "error"
+    });
+    require(report.at("schema") == "assetbridge.batch.v1", "batch error schema mismatch");
+    require(report.at("status") == "failed", "batch argument error status mismatch");
+    require(report.at("target_format").is_null()
+            && report.at("output_root").is_null()
+            && report.at("jobs").is_array()
+            && report.at("jobs").empty(),
+        "batch argument error null/empty semantics mismatch");
+    require(report.at("error").is_object()
+            && report.at("error").at("code").is_string()
+            && report.at("error").at("message").is_string(),
+        "batch argument error must be structured");
+}
+
 } // namespace
 
 int wmain(int argc, wchar_t* argv[]) {
-    if (argc < 3 || argc > 5) {
+    if (argc < 3) {
         std::cerr << "Usage: assetbridge-json-validator <mode> <json-file> [input-file] [text-file]\n";
         return 2;
     }
@@ -888,6 +1009,18 @@ int wmain(int argc, wchar_t* argv[]) {
         } else if (mode == L"conversion_unknown") {
             require(argc == 4, "conversion_unknown requires an input file");
             validate_conversion_error(report, "unknown_target_format");
+        } else if (mode == L"batch_success" || mode == L"batch_partial") {
+            require(argc >= 6, "batch validation requires status, output, and inputs");
+            std::vector<std::filesystem::path> inputs;
+            for (int index = 5; index < argc; ++index) inputs.emplace_back(argv[index]);
+            validate_batch_report(
+                report,
+                std::wstring_view(argv[3]) == L"success" ? "success" : "partial",
+                std::filesystem::path(argv[4]),
+                inputs);
+        } else if (mode == L"batch_argument_error") {
+            require(argc == 3, "batch_argument_error does not accept extra arguments");
+            validate_batch_argument_error(report);
         } else {
             throw std::runtime_error("Unknown JSON validation mode");
         }

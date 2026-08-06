@@ -45,6 +45,8 @@ enum class ConversionStage {
 using ConversionProgressCallback = std::function<void(ConversionStage)>;
 
 [[nodiscard]] std::string_view to_string(ConversionErrorCode code) noexcept;
+[[nodiscard]] std::filesystem::path sanitize_output_stem(
+    const std::filesystem::path& source_stem);
 
 struct Vector3Value {
     double x = 0.0;

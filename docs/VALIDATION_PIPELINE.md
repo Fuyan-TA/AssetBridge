@@ -3,6 +3,10 @@
 AssetBridge treats conversion as a transaction with evidence, not as a file
 extension change or a successful exporter return code.
 
+For a batch, this pipeline is applied independently and sequentially to every
+queued OBJ. A failed or unsupported item contributes a structured terminal
+result but does not prevent later safe items from running.
+
 ```mermaid
 flowchart LR
     Inspect["Inspect original OBJ"] --> Resolve["Resolve MTL and map_Kd<br/>inside asset root"]
@@ -107,3 +111,18 @@ After every check passes, AssetBridge writes `conversion-report.json` and
 renames the temporary directory to the selected final directory. Validation or
 filesystem failure rolls back the temporary directory. Tests assert that
 successful and failed conversions leave no `.assetbridge-tmp-*` residue.
+
+## 7. Batch aggregation
+
+After the coordinator reaches a terminal state, AssetBridge writes
+`assetbridge.batch.v1` to `<output-root>/batch-report.json`. The report has a
+stable job ID and one terminal state per input, aggregate counts, route IDs,
+diagnostic geometry/material/image counts, output paths or `null`, duration,
+and structured error data. It does not replace the per-asset conversion report.
+
+Queue input is deduplicated by normalized canonical path. Equal filenames from
+different source directories remain separate jobs; final output collisions use
+the existing deterministic `_2`, `_3`, and later suffixes. Windows-reserved
+output stems and invalid trailing characters are sanitized before selecting a
+transaction directory. Cancel After Current commits or rolls back the active
+asset normally, then records every remaining queued job as canceled.
