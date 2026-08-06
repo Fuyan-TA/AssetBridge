@@ -504,6 +504,8 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
     const auto acceptance_output = command_line_path(L"--acceptance-output");
     const bool acceptance_test = !acceptance_inputs.empty() && acceptance_output.has_value();
     const bool acceptance_hold = command_line_has(L"--acceptance-hold");
+    const bool acceptance_cancel_after_current =
+        command_line_has(L"--acceptance-cancel-after-current");
     const auto startup_begin = std::chrono::steady_clock::now();
     CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
     if (!SDL_Init(SDL_INIT_VIDEO)) {
@@ -578,6 +580,7 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
     std::vector<std::filesystem::path> pending_drop;
     std::vector<std::string> acceptance_input_utf8;
     bool acceptance_conversion_started = false;
+    bool acceptance_cancel_requested = false;
     int acceptance_exit_code = 0;
     if (acceptance_test) {
         (void)state.set_output_root(*acceptance_output);
@@ -658,12 +661,23 @@ int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int) {
                 }
             }
         }
+        if (acceptance_test && acceptance_cancel_after_current
+            && acceptance_conversion_started && worker.busy()
+            && !acceptance_cancel_requested) {
+            acceptance_cancel_requested = state.cancel_after_current();
+        }
         if (acceptance_test && acceptance_conversion_started && !worker.busy()) {
             const auto completed = state.snapshot();
             if (completed.status != BatchRunStatus::not_started
                 && completed.status != BatchRunStatus::running) {
-                acceptance_exit_code = completed.status == BatchRunStatus::success
-                    && worker.error().empty() ? 0 : 20;
+                const bool expected_result = acceptance_cancel_after_current
+                    ? completed.status == BatchRunStatus::partial
+                        && completed.summary.succeeded == 1
+                        && completed.summary.canceled > 0
+                        && completed.summary.failed == 0
+                        && completed.summary.not_supported == 0
+                    : completed.status == BatchRunStatus::success;
+                acceptance_exit_code = expected_result && worker.error().empty() ? 0 : 20;
                 if (!acceptance_hold) running = false;
             }
         }

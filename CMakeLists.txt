@@ -370,11 +370,31 @@ add_test(
         --acceptance-input "${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/textured/rejected/unsupported_semantic.obj"
         --acceptance-output "${CMAKE_CURRENT_BINARY_DIR}/desktop-batch-partial"
 )
+add_test(
+    NAME assetbridge-desktop-batch-same-stem
+    COMMAND assetbridge-desktop
+        --acceptance-input "${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/batch/same-a/same.obj"
+        --acceptance-input "${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/batch/same-b/same.obj"
+        --acceptance-output "${CMAKE_CURRENT_BINARY_DIR}/desktop-batch-same-stem"
+)
+add_test(
+    NAME assetbridge-desktop-batch-cancel-after-current
+    COMMAND assetbridge-desktop
+        --acceptance-input "${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/minimal_triangle.obj"
+        --acceptance-input "${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/multi_two_triangles.obj"
+        --acceptance-input "${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/multi_triangle_quad.obj"
+        --acceptance-input "${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/textured/probe/texture_behavior.obj"
+        --acceptance-input "${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/textured/verified/shared_texture.obj"
+        --acceptance-output "${CMAKE_CURRENT_BINARY_DIR}/desktop-batch-cancel-after-current"
+        --acceptance-cancel-after-current
+)
 set_tests_properties(
     assetbridge-desktop-batch-acceptance-ascii
     assetbridge-desktop-batch-acceptance-unicode
     assetbridge-desktop-batch-acceptance-textured
     assetbridge-desktop-batch-partial
+    assetbridge-desktop-batch-same-stem
+    assetbridge-desktop-batch-cancel-after-current
     PROPERTIES TIMEOUT 45 LABELS "gui;acceptance"
 )
 set_tests_properties(assetbridge-desktop-batch-partial PROPERTIES WILL_FAIL TRUE)
