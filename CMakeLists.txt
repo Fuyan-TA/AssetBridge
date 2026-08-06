@@ -44,6 +44,18 @@ target_include_directories(assetbridge-product
 
 target_compile_options(assetbridge-product PRIVATE /W4 /permissive- /utf-8)
 
+add_library(assetbridge-batch STATIC
+    src/batch/batch_coordinator.cpp
+)
+
+target_include_directories(assetbridge-batch
+    PUBLIC
+        ${CMAKE_CURRENT_SOURCE_DIR}/include
+)
+
+target_link_libraries(assetbridge-batch PUBLIC assetbridge-product)
+target_compile_options(assetbridge-batch PRIVATE /W4 /permissive- /utf-8)
+
 add_library(assetbridge-core STATIC
     src/core/asset_converter.cpp
     src/core/asset_inspector.cpp
@@ -189,6 +201,13 @@ add_executable(assetbridge-desktop-state-tests
 target_link_libraries(assetbridge-desktop-state-tests PRIVATE assetbridge-desktop-model)
 target_compile_options(assetbridge-desktop-state-tests PRIVATE /W4 /permissive- /utf-8)
 
+add_executable(assetbridge-batch-coordinator-tests
+    tests/batch_coordinator_tests.cpp
+)
+
+target_link_libraries(assetbridge-batch-coordinator-tests PRIVATE assetbridge-batch)
+target_compile_options(assetbridge-batch-coordinator-tests PRIVATE /W4 /permissive- /utf-8)
+
 add_test(NAME assetbridge-core-inspector COMMAND assetbridge-tests)
 set_tests_properties(assetbridge-core-inspector PROPERTIES
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
@@ -234,6 +253,7 @@ set_tests_properties(assetbridge-scene-semantics PROPERTIES
 )
 
 add_test(NAME assetbridge-desktop-state COMMAND assetbridge-desktop-state-tests)
+add_test(NAME assetbridge-batch-coordinator COMMAND assetbridge-batch-coordinator-tests)
 add_test(NAME assetbridge-desktop-smoke COMMAND assetbridge-desktop --smoke-test)
 add_test(
     NAME assetbridge-desktop-smoke-150
@@ -607,6 +627,7 @@ set_tests_properties(
     assetbridge-companion-resolver
     assetbridge-texture-pipeline
     assetbridge-scene-semantics
+    assetbridge-batch-coordinator
     PROPERTIES LABELS "unit"
 )
 set_tests_properties(assetbridge-desktop-state PROPERTIES LABELS "unit;desktop-state")
