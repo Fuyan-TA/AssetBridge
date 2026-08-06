@@ -103,7 +103,8 @@ add_executable(assetbridge-cli
     apps/assetbridge-cli/main.cpp
 )
 
-target_link_libraries(assetbridge-cli PRIVATE assetbridge-core assetbridge-version)
+target_link_libraries(assetbridge-cli
+    PRIVATE assetbridge-core assetbridge-batch assetbridge-version)
 target_compile_options(assetbridge-cli PRIVATE /W4 /permissive- /utf-8)
 
 add_executable(assetbridge-desktop WIN32
@@ -631,6 +632,74 @@ add_assetbridge_cli_test(assetbridge-cli-convert-unknown-target-json
     "-DASSETBRIDGE_VALIDATE_JSON=conversion_unknown"
 )
 
+add_assetbridge_cli_test(assetbridge-cli-batch-text-success
+    "-DASSETBRIDGE_COMMAND=batch"
+    "-DASSETBRIDGE_BATCH_INPUTS=${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/minimal_triangle.obj|${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/中文三角形.obj"
+    "-DASSETBRIDGE_TARGET=glb"
+    "-DASSETBRIDGE_OUTPUT=${CMAKE_CURRENT_BINARY_DIR}/cli-batch-text-success"
+    "-DASSETBRIDGE_CLEAN_OUTPUT=TRUE"
+    "-DASSETBRIDGE_EXPECTED_EXIT=0"
+    "-DASSETBRIDGE_EXPECTED_STDOUT=Batch Status: success|Total: 2|Succeeded: 2|job-000001|job-000002"
+)
+
+add_assetbridge_cli_test(assetbridge-cli-batch-json-success
+    "-DASSETBRIDGE_COMMAND=batch"
+    "-DASSETBRIDGE_BATCH_INPUTS=${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/minimal_triangle.obj|${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/中文三角形.obj"
+    "-DASSETBRIDGE_TARGET=GLB2"
+    "-DASSETBRIDGE_OUTPUT=${CMAKE_CURRENT_BINARY_DIR}/cli-batch-json-success"
+    "-DASSETBRIDGE_CLEAN_OUTPUT=TRUE"
+    "-DASSETBRIDGE_OPTION=--json"
+    "-DASSETBRIDGE_EXPECTED_EXIT=0"
+    "-DASSETBRIDGE_VALIDATE_JSON=batch_success"
+    "-DASSETBRIDGE_EXPECTED_BATCH_STATUS=success"
+)
+
+add_assetbridge_cli_test(assetbridge-cli-batch-json-partial
+    "-DASSETBRIDGE_COMMAND=batch"
+    "-DASSETBRIDGE_BATCH_INPUTS=${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/minimal_triangle.obj|${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/invalid.obj|${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/textured/rejected/unsupported_semantic.obj"
+    "-DASSETBRIDGE_TARGET=glb"
+    "-DASSETBRIDGE_OUTPUT=${CMAKE_CURRENT_BINARY_DIR}/cli-batch-json-partial"
+    "-DASSETBRIDGE_CLEAN_OUTPUT=TRUE"
+    "-DASSETBRIDGE_OPTION=--json"
+    "-DASSETBRIDGE_EXPECTED_EXIT=1"
+    "-DASSETBRIDGE_VALIDATE_JSON=batch_partial"
+    "-DASSETBRIDGE_EXPECTED_BATCH_STATUS=partial"
+)
+
+add_assetbridge_cli_test(assetbridge-cli-batch-same-stem-json
+    "-DASSETBRIDGE_COMMAND=batch"
+    "-DASSETBRIDGE_BATCH_INPUTS=${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/batch/same-a/same.obj|${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/batch/same-b/same.obj"
+    "-DASSETBRIDGE_TARGET=glb"
+    "-DASSETBRIDGE_OUTPUT=${CMAKE_CURRENT_BINARY_DIR}/cli-batch-same-stem"
+    "-DASSETBRIDGE_CLEAN_OUTPUT=TRUE"
+    "-DASSETBRIDGE_OPTION=--json"
+    "-DASSETBRIDGE_EXPECTED_EXIT=0"
+    "-DASSETBRIDGE_VALIDATE_JSON=batch_success"
+    "-DASSETBRIDGE_EXPECTED_BATCH_STATUS=success"
+)
+
+add_assetbridge_cli_test(assetbridge-cli-batch-no-input-json
+    "-DASSETBRIDGE_COMMAND=batch"
+    "-DASSETBRIDGE_TARGET=glb"
+    "-DASSETBRIDGE_OUTPUT=${CMAKE_CURRENT_BINARY_DIR}/cli-batch-no-input"
+    "-DASSETBRIDGE_CLEAN_OUTPUT=TRUE"
+    "-DASSETBRIDGE_EXPECT_EMPTY_OUTPUT=TRUE"
+    "-DASSETBRIDGE_OPTION=--json"
+    "-DASSETBRIDGE_EXPECTED_EXIT=2"
+    "-DASSETBRIDGE_VALIDATE_JSON=batch_argument_error"
+)
+
+add_assetbridge_cli_test(assetbridge-cli-batch-non-obj
+    "-DASSETBRIDGE_COMMAND=batch"
+    "-DASSETBRIDGE_BATCH_INPUTS=${CMAKE_CURRENT_SOURCE_DIR}/tests/assets/not-an-obj.glb"
+    "-DASSETBRIDGE_TARGET=glb"
+    "-DASSETBRIDGE_OUTPUT=${CMAKE_CURRENT_BINARY_DIR}/cli-batch-non-obj"
+    "-DASSETBRIDGE_CLEAN_OUTPUT=TRUE"
+    "-DASSETBRIDGE_EXPECT_EMPTY_OUTPUT=TRUE"
+    "-DASSETBRIDGE_EXPECTED_EXIT=2"
+    "-DASSETBRIDGE_EXPECTED_STDERR=not_obj|no_valid_input"
+)
+
 add_test(
     NAME assetbridge-cli-version
     COMMAND assetbridge-cli --version
@@ -674,7 +743,7 @@ foreach(ASSETBRIDGE_TEST IN LISTS ASSETBRIDGE_REGISTERED_TESTS)
         set_property(TEST "${ASSETBRIDGE_TEST}" APPEND PROPERTY LABELS "cli")
         set_property(TEST "${ASSETBRIDGE_TEST}" PROPERTY TIMEOUT 60)
     endif()
-    if(ASSETBRIDGE_TEST MATCHES "^assetbridge-cli-convert-")
+    if(ASSETBRIDGE_TEST MATCHES "^assetbridge-cli-(convert|batch)-")
         set_property(TEST "${ASSETBRIDGE_TEST}" APPEND PROPERTY LABELS "acceptance")
     endif()
 endforeach()
