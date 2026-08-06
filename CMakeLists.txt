@@ -59,6 +59,8 @@ target_compile_options(assetbridge-batch PRIVATE /W4 /permissive- /utf-8)
 add_library(assetbridge-core STATIC
     src/core/asset_converter.cpp
     src/core/asset_inspector.cpp
+    src/core/batch_processor.cpp
+    src/core/batch_serializer.cpp
     src/core/companion_resolver.cpp
     src/core/conversion_serializer.cpp
     src/core/glb_container.cpp
@@ -78,6 +80,7 @@ target_include_directories(assetbridge-core
 target_link_libraries(assetbridge-core
     PRIVATE
         assetbridge-product
+        assetbridge-batch
         assimp::assimp
         nlohmann_json::nlohmann_json
 )
@@ -208,6 +211,18 @@ add_executable(assetbridge-batch-coordinator-tests
 target_link_libraries(assetbridge-batch-coordinator-tests PRIVATE assetbridge-batch)
 target_compile_options(assetbridge-batch-coordinator-tests PRIVATE /W4 /permissive- /utf-8)
 
+add_executable(assetbridge-batch-conversion-tests
+    tests/batch_conversion_tests.cpp
+)
+
+target_link_libraries(assetbridge-batch-conversion-tests
+    PRIVATE
+        assetbridge-core
+        assetbridge-batch
+        nlohmann_json::nlohmann_json
+)
+target_compile_options(assetbridge-batch-conversion-tests PRIVATE /W4 /permissive- /utf-8)
+
 add_test(NAME assetbridge-core-inspector COMMAND assetbridge-tests)
 set_tests_properties(assetbridge-core-inspector PROPERTIES
     WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
@@ -254,6 +269,12 @@ set_tests_properties(assetbridge-scene-semantics PROPERTIES
 
 add_test(NAME assetbridge-desktop-state COMMAND assetbridge-desktop-state-tests)
 add_test(NAME assetbridge-batch-coordinator COMMAND assetbridge-batch-coordinator-tests)
+add_test(
+    NAME assetbridge-batch-conversion
+    COMMAND assetbridge-batch-conversion-tests
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/assets"
+        "${CMAKE_CURRENT_BINARY_DIR}/batch-conversion-output"
+)
 add_test(NAME assetbridge-desktop-smoke COMMAND assetbridge-desktop --smoke-test)
 add_test(
     NAME assetbridge-desktop-smoke-150
@@ -628,6 +649,7 @@ set_tests_properties(
     assetbridge-texture-pipeline
     assetbridge-scene-semantics
     assetbridge-batch-coordinator
+    assetbridge-batch-conversion
     PROPERTIES LABELS "unit"
 )
 set_tests_properties(assetbridge-desktop-state PROPERTIES LABELS "unit;desktop-state")
