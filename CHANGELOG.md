@@ -4,7 +4,26 @@ All notable changes to AssetBridge are documented here.
 
 ## [Unreleased]
 
-No product capability is currently scheduled for this section.
+### Added
+
+- Sequential multi-file OBJ→GLB2 batch conversion in the desktop application
+  and CLI, using the same verified per-asset conversion route.
+- Stable `assetbridge.batch.v1` JSON with per-job states, summary counts,
+  diagnostics, output/report paths, timing, and structured errors.
+- Multi-file SDL3 drag-and-drop and Windows native multi-select, queue
+  inspection, item removal, shared output-root selection, and per-item status.
+- Failure isolation: failed and not-supported assets do not block later jobs.
+- `Cancel After Current`, which completes the active transaction and cancels
+  the remaining queued jobs without partial output.
+- Canonical input deduplication, a 256-job queue limit, deterministic same-stem
+  collision suffixes, and Windows-reserved output-name sanitization.
+
+### Unchanged product boundary
+
+- OBJ→GLB2 remains the only product-enabled and verified conversion route.
+- No new texture semantics, hierarchy/instancing behavior, character data,
+  formats, or `--allow-lossy` behavior are enabled.
+- The project version remains 0.2.0 until a separately approved release phase.
 
 ## [0.2.0] - 2026-08-06
 

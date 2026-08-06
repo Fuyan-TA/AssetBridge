@@ -13,6 +13,24 @@ AssetBridge v0.2.0 不是通用全格式转换器，也不对已验证边界之�
 
 文档截图中的本地文件系统路径已作隐藏处理。
 
+## 未发布的批处理工作流
+
+当前开发分支新增顺序批处理编排，但没有扩大已验证转换路线。桌面拖放和 Windows
+原生文件选择器可一次添加多个 OBJ；每个任务独立检查和预检，并在队列中显示状态。
+**Convert All to GLB** 一次只处理一个任务；某个任务失败或暂未支持，不会阻断后续
+任务。**Cancel After Current** 会让当前事务完成，再把剩余排队任务标记为 canceled。
+
+CLI 使用同一个协调器和稳定 JSON Schema：
+
+```powershell
+assetbridge-cli batch --input .\a.obj --input .\b.obj `
+  --to glb --output .\converted --json
+```
+
+输出根目录包含 `batch-report.json`；每个成功任务仍使用原有的不覆盖资产目录和
+`conversion-report.json`。批处理没有开放其他输入/输出格式、贴图语义、层级模式或
+`--allow-lossy`。在单独批准 Release Preparation 前，产品版本仍为 0.2.0。
+
 ## v0.2.0 已验证范围
 
 | 范围 | v0.2.0 产品承诺 |
@@ -50,12 +68,13 @@ AssetBridge v0.2.0 不是通用全格式转换器，也不对已验证边界之�
 
 1. 完整解压 Windows x64 ZIP，保持 EXE 与 DLL 位于同一目录。
 2. 运行 `assetbridge-desktop.exe`。
-3. 将一个 OBJ 拖入窗口，或点击 **Choose OBJ**。
-4. 查看资产统计与 preflight 结果。
-5. 选择输出目录，点击 **Convert to GLB**。
-6. 回读验证成功后，打开输出目录或 JSON 报告。
+3. 将一个或多个 OBJ 拖入窗口，或点击 **Choose OBJ Files**。
+4. 查看每个队列项的统计、preflight 结果和诊断。
+5. 移除不需要的任务，选择共享输出根目录，点击 **Convert All to GLB**。
+6. 查看 success/not-supported/failed/canceled 汇总和根级批报告。
 
-AssetBridge 一次只接受一个 OBJ。拖入多个文件或非 OBJ 文件会在转换前被拒绝。
+队列最多接受 256 个规范路径互不重复的 OBJ。转换期间队列不可修改。单 OBJ 仍走
+同一条路径，只是它是一项任务的批次。
 
 ### CLI
 
@@ -65,6 +84,7 @@ assetbridge-cli inspect .\model.obj
 assetbridge-cli inspect .\model.obj --json
 assetbridge-cli preflight .\model.obj --target glb --json
 assetbridge-cli convert .\model.obj --to glb --output .\converted --json
+assetbridge-cli batch --input .\a.obj --input .\b.obj --to glb --output .\converted --json
 assetbridge-cli capabilities --json
 ```
 
@@ -83,6 +103,19 @@ AssetBridge 已用测试验证什么。运行时可用不等于产品支持声�
 如果最终目录已存在，AssetBridge 会选择 `<source-stem>_2`、`_3` 等名称。导出和
 验证在同级临时目录中完成，只有全部验证通过后才出现最终目录。
 
+批处理在根目录增加一个报告，同时保留逐资产事务边界：
+
+```text
+<output-root>/
+├── batch-report.json
+├── a/
+│   ├── a.glb
+│   └── conversion-report.json
+└── b/
+    ├── b.glb
+    └── conversion-report.json
+```
+
 CLI 退出码保持稳定：
 
 | 退出码 | 含义 |
@@ -90,6 +123,9 @@ CLI 退出码保持稳定：
 | 0 | 命令成功完成。 |
 | 1 | 文件、导入、预检、导出或验证错误。 |
 | 2 | 命令、参数或目标格式无效。 |
+
+`batch` 命令中，退出码 `0` 表示所有任务成功；`1` 表示部分/全部任务失败或取消；
+`2` 表示参数错误或没有有效 OBJ 输入。
 
 ## 从源码构建
 
@@ -139,24 +175,29 @@ configure 阶段生成的版本头同时供 CLI 与桌面 UI 使用。
 
 以下是实测值，不是跨机器保证。测量没有清理系统缓存，也没有修改 Windows 安全策略。
 
-| 指标 | v0.1.0 记录值 | v0.2.0 候选值 | 变化 |
+| 指标 | v0.2.0 记录值 | 未发布批量候选值 | 相对 v0.2.0 变化 |
 |---|---:|---:|---:|
-| Desktop EXE | 745,984 bytes | 865,792 bytes | +119,808 bytes |
-| CLI EXE | 376,320 bytes | 496,640 bytes | +120,320 bytes |
+| Desktop EXE | 865,792 bytes | 944,128 bytes | +78,336 bytes |
+| CLI EXE | 496,640 bytes | 561,664 bytes | +65,024 bytes |
 | DLL 数量 | 11 | 11 | 0 |
-| 便携目录 | 10,363,188 bytes | 10,603,313 bytes | +240,125 bytes |
-| ZIP | 4,347,759 bytes | 4,461,429 bytes | +113,670 bytes |
-| 首次测量：进程创建到窗口可响应 | 215.983 ms | 247.930 ms | +31.947 ms |
-| 缓存后启动中位数，5 次 | 183.421 ms | 170.737 ms | -12.684 ms |
-| 空闲 Working Set 中位数，5 次 | 71,897,088 bytes | 71,917,568 bytes（68.59 MiB） | +20,480 bytes |
-| 空闲 Private Memory 中位数，5 次 | 未记录 | 79,364,096 bytes（75.69 MiB） | 不可比较 |
+| 便携目录 | 10,603,313 bytes | 10,746,673 bytes | +143,360 bytes |
+| ZIP | 4,461,429 bytes | 4,528,346 bytes | +66,917 bytes |
+| 首次测量：进程创建到窗口可响应 | 247.930 ms | 237.840 ms | -10.090 ms |
+| 缓存后启动中位数，5 次 | 170.737 ms | 178.634 ms | +7.897 ms |
+| 空闲 Working Set 中位数，5 次 | 71,917,568 bytes | 71,618,560 bytes（68.30 MiB） | -299,008 bytes |
+| 空闲 Private Memory 中位数，5 次 | 79,364,096 bytes | 82,038,784 bytes（78.24 MiB） | +2,674,688 bytes |
+
+10 份项目自制最小 OBJ 的复制实例按顺序完成，总耗时 235.050 ms。单任务 GUI
+运行的 Working Set 峰值为 73,928,704 bytes；10 任务运行峰值为 87,666,688
+bytes，批次完成后回落到 74,014,720 bytes。10 个 GLB 与单项报告均已生成，
+且没有事务临时目录残留。这些数字只描述当前候选版本，不构成大型资产吞吐保证。
 
 测试机器：AMD Ryzen 5 9600X、12 个逻辑处理器、Windows build
 10.0.26200.8875。启动时间从创建进程计时，到主窗口存在且可响应为止；空闲内存
-在该时刻后 1.5 秒、未加载资产时采样。v0.2.0 测量状态是以 merge commit
-`5e638a19638f8fdb5bfc9d1d0527d36e77ad410d` 为基础的 `release/v0.2.0`
-发布准备工作树。v0.1.0 ZIP 使用已发布 Release 资产大小，其他 v0.1.0 数据沿用
-既有发布证据。
+在该时刻后 1.5 秒、未加载资产时采样。未发布测量使用以 v0.2.0 commit
+`5175bde472936f56a740b0797b52d9a46929379b` 为基线的
+`feat/v0.3-batch-workflows` 开发树。由于尚未进入 Release Preparation，包内版本
+仍为 0.2.0。
 
 完整 DLL 与验证证据见[作品集案例](docs/PORTFOLIO_CASE_STUDY.md)。
 
