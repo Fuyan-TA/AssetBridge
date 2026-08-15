@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.25)
 
-project(AssetBridge VERSION 0.2.0 LANGUAGES CXX)
+project(AssetBridge VERSION 0.3.0 LANGUAGES CXX)
 
 if(NOT MSVC)
     message(FATAL_ERROR "AssetBridge currently requires the MSVC toolchain.")

@@ -4,6 +4,10 @@ All notable changes to AssetBridge are documented here.
 
 ## [Unreleased]
 
+No unreleased changes are currently documented.
+
+## [0.3.0] - 2026-08-07
+
 ### Added
 
 - Sequential multi-file OBJ→GLB2 batch conversion in the desktop application
@@ -23,7 +27,8 @@ All notable changes to AssetBridge are documented here.
 - OBJ→GLB2 remains the only product-enabled and verified conversion route.
 - No new texture semantics, hierarchy/instancing behavior, character data,
   formats, or `--allow-lossy` behavior are enabled.
-- The project version remains 0.2.0 until a separately approved release phase.
+- Existing single-asset behavior and the verified conversion boundary remain
+  unchanged.
 
 ## [0.2.0] - 2026-08-06
 
